@@ -1,0 +1,20 @@
+[submodule "thirdparty/glm"]
+	path = thirdparty/glm
+	url = https://github.com/g-truc/glm.git
+
+[submodule "thirdparty/stb"]
+	path = thirdparty/stb
+	url = https://github.com/nothings/stb
+
+[submodule "thirdparty/glfw"]
+	path = thirdparty/glfw
+	url = https://github.com/glfw/glfw
+
+[submodule "thirdparty/imgui"]
+	path = thirdparty/imgui
+	url = https://github.com/ocornut/imgui
+	branch = docking
+
+[submodule "thirdparty/spdlog"]
+	path = thirdparty/spdlog
+	url = https://github.com/gabime/spdlog

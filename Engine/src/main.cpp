@@ -1,0 +1,84 @@
+#include "application.h"
+#include "logger.h"
+#include "entry_point.h"
+#include "image.h"
+#include "timer.h"
+#include "Graphics/renderer.h"
+#include "Physics/lbm_solver.cuh"
+
+class cfd final : public layer {
+public:
+    cfd() {
+        m_renderer = std::make_unique<renderer>(400, 400);
+        
+        m_solver = std::make_unique<lbm_solver>(400, 400);
+        
+        // Register external memory
+        m_solver->register_external_density(m_renderer->get_density_fd(), 400 * 400 * sizeof(float));
+        m_solver->register_external_velocity(m_renderer->get_velocity_fd(), 400 * 400 * sizeof(float) * 2);
+        
+        m_solver->init();
+        
+        lbm_solver::Rect rect = {150, 150, 100, 100};
+        m_solver->add_solid(rect);
+
+#ifdef _DEBUG
+        LOG_INFO("[CFD] CFD Layer initialized");
+#endif
+    }
+
+    virtual void on_update(const float ts) override {
+        m_solver->step();
+        m_renderer->update_sim_data();
+    }
+
+    virtual void on_render() override {
+        const auto& io = ImGui::GetIO();
+        
+        style::theme();
+
+        ImGui::Begin("Viewport", nullptr,
+                    ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
+                    ImGuiWindowFlags_NoTitleBar |
+                    ImGuiWindowFlags_NoScrollbar);
+        
+        ImVec2 viewport_panel_size = ImGui::GetContentRegionAvail();
+        m_viewport_width = viewport_panel_size.x;
+        m_viewport_height = viewport_panel_size.y;
+
+        auto image = m_renderer->get_output_image();
+        if (image) {
+            ImGui::Image(image->get_descriptor_set(), 
+                         {static_cast<float>(image->get_width()),
+                          static_cast<float>(image->get_height())},
+                          ImVec2(0, 1), ImVec2(1, 0));
+        }
+        
+        ImGui::End();
+
+        render();
+    }
+
+    void render() {
+        timer timer;
+        m_renderer->resize(m_viewport_width, m_viewport_height);
+        m_renderer->render();
+        m_last_render_time = timer.elapsed_ms();
+    }
+
+private:
+    std::unique_ptr<lbm_solver> m_solver;
+    std::unique_ptr<renderer> m_renderer;
+
+    int m_viewport_width = 0, m_viewport_height = 0;
+    float m_last_render_time = 0.0f;
+};
+
+application* create_application(int argc, char** argv) {
+    specs spec;
+    spec.name = "CFD Engine";
+
+    auto app = new application(spec);
+    app->push_layer<cfd>();
+    return app;
+}
