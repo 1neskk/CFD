@@ -71,18 +71,15 @@ float lic(vec2 uv) {
 
 void main() 
 {
-    float density = texture(u_DensityTexture, inUV).r;
-    
-    // Normalize density for visualization (assuming range around 1.0)
-    // Adjust these bounds based on simulation stability
-    float t = clamp((density - 0.95) * 10.0, 0.0, 1.0);
+    float curl = texture(u_DensityTexture, inUV).r;
+
+    float scale = 10.0; 
+    float t = clamp(curl * scale + 0.5, 0.0, 1.0);
     
     vec3 heat = turbo(t);
     
     float stream = lic(inUV);
     
-    // Blend heatmap and streamlines
-    // Darken the heatmap where streamlines are dark
     vec3 finalColor = heat * (0.5 + 0.5 * stream);
 
     outColor = vec4(finalColor, 1.0);

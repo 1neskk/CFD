@@ -14,7 +14,7 @@ public:
         m_solver = std::make_unique<lbm_solver>(400, 400);
         
         // Register external memory
-        m_solver->register_external_density(m_renderer->get_density_fd(), 400 * 400 * sizeof(float));
+        m_solver->register_external_curl(m_renderer->get_density_fd(), 400 * 400 * sizeof(float));
         m_solver->register_external_velocity(m_renderer->get_velocity_fd(), 400 * 400 * sizeof(float) * 2);
         
         m_solver->init();

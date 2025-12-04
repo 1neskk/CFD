@@ -556,7 +556,6 @@ int renderer::get_velocity_fd() {
 }
 
 void renderer::update_sim_data() {
-    // No copy needed! The solver writes directly to the buffer we exported.
     cudaDeviceSynchronize();
     vkResetCommandBuffer(m_transfer_command_buffer, 0);
 

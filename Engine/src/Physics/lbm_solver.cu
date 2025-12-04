@@ -139,6 +139,7 @@ lbm_solver::lbm_solver(int width, int height) : width(width), height(height) {
     d_f_new = cuda_buffer<float>(9 * num_cells);
     d_rho = cuda_buffer<float>(num_cells);
     d_u = cuda_buffer<float2>(num_cells);
+    d_curl = cuda_buffer<float>(num_cells);
     d_solid = cuda_buffer<unsigned char>(num_cells);
 
     // Zero out solid mask initially
@@ -153,6 +154,7 @@ lbm_solver::~lbm_solver() {
     d_f_new.release();
     d_rho.release();
     d_u.release();
+    d_curl.release();
     d_solid.release();
     
     if (m_external_density) {
@@ -160,6 +162,9 @@ lbm_solver::~lbm_solver() {
     }
     if (m_external_velocity) {
         cudaDestroyExternalMemory(m_external_velocity);
+    }
+    if (m_external_curl) {
+        cudaDestroyExternalMemory(m_external_curl);
     }
 }
 
@@ -171,6 +176,8 @@ void lbm_solver::init() {
 void lbm_solver::step() {
     k_stream_collide<<<grid_size, block_size>>>(d_f.get_data(), d_f_new.get_data(), d_rho.get_data(), d_u.get_data(), d_solid.get_data(), width, height, tau, inlet_velocity);
     cudaDeviceSynchronize();
+
+    compute_curl();
 
     std::swap(d_f, d_f_new);
 }
@@ -243,4 +250,60 @@ void lbm_solver::register_external_velocity(int fd, size_t size) {
 
     // Replace d_u with a non-owning buffer wrapping the mapped pointer
     d_u = cuda_buffer<float2>(static_cast<float2*>(mapped_ptr), num_cells, false);
+}
+
+__global__ void k_compute_curl(const float2* __restrict__ u, float* __restrict__ curl, int width, int height) {
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    int idx = y * width + x;
+
+    if (x >= width || y >= height) return;
+
+    // Simple finite differences
+    // Curl = du_y/dx - du_x/dy
+    
+    // du_y/dx
+    int x_plus = (x + 1 < width) ? (x + 1) : x;
+    int x_minus = (x - 1 >= 0) ? (x - 1) : x;
+    float uy_plus = u[y * width + x_plus].y;
+    float uy_minus = u[y * width + x_minus].y;
+    float duy_dx = (uy_plus - uy_minus) * 0.5f;
+
+    // du_x/dy
+    int y_plus = (y + 1 < height) ? (y + 1) : y;
+    int y_minus = (y - 1 >= 0) ? (y - 1) : y;
+    float ux_plus = u[y_plus * width + x].x;
+    float ux_minus = u[y_minus * width + x].x;
+    float dux_dy = (ux_plus - ux_minus) * 0.5f;
+
+    curl[idx] = duy_dx - dux_dy;
+}
+
+void lbm_solver::compute_curl() {
+    k_compute_curl<<<grid_size, block_size>>>(d_u.get_data(), d_curl.get_data(), width, height);
+    cudaDeviceSynchronize();
+}
+
+void lbm_solver::register_external_curl(int fd, size_t size) {
+    cudaExternalMemoryHandleDesc externalMemoryHandleDesc = {};
+    externalMemoryHandleDesc.type = cudaExternalMemoryHandleTypeOpaqueFd;
+    externalMemoryHandleDesc.handle.fd = fd;
+    externalMemoryHandleDesc.size = size;
+
+    if (cudaImportExternalMemory(&m_external_curl, &externalMemoryHandleDesc) != cudaSuccess) {
+        throw std::runtime_error("Failed to import external curl memory to CUDA");
+    }
+
+    cudaExternalMemoryBufferDesc bufferDesc = {};
+    bufferDesc.offset = 0;
+    bufferDesc.size = size;
+    bufferDesc.flags = 0;
+
+    void* mapped_ptr = nullptr;
+    if (cudaExternalMemoryGetMappedBuffer(&mapped_ptr, m_external_curl, &bufferDesc) != cudaSuccess) {
+        throw std::runtime_error("Failed to map external curl memory to CUDA pointer");
+    }
+
+    // Replace d_curl with a non-owning buffer wrapping the mapped pointer
+    d_curl = cuda_buffer<float>(static_cast<float*>(mapped_ptr), num_cells, false);
 }
