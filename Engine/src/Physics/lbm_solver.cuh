@@ -20,6 +20,7 @@ public:
     void register_external_density(int fd, size_t size);
     void register_external_velocity(int fd, size_t size);
     void register_external_curl(int fd, size_t size);
+    void register_external_solid(int fd, size_t size);
 
     // Getters for visualization/interop
     cuda_buffer<float>& get_density() { return d_rho; }
@@ -52,6 +53,7 @@ private:
     cudaExternalMemory_t m_external_density = nullptr;
     cudaExternalMemory_t m_external_velocity = nullptr;
     cudaExternalMemory_t m_external_curl = nullptr;
+    cudaExternalMemory_t m_external_solid = nullptr;
 
     void compute_curl();
     cuda_buffer<float> d_curl;

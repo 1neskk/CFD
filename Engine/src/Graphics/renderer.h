@@ -20,6 +20,7 @@ public:
     void resize(uint32_t width, uint32_t height);
     int get_density_fd();
     int get_velocity_fd();
+    int get_solid_fd();
 
 private:
     void init_vulkan_resources();
@@ -43,6 +44,8 @@ private:
     VkDeviceMemory m_density_memory = VK_NULL_HANDLE;
     VkBuffer m_velocity_buffer = VK_NULL_HANDLE;
     VkDeviceMemory m_velocity_memory = VK_NULL_HANDLE;
+    VkBuffer m_solid_buffer = VK_NULL_HANDLE;
+    VkDeviceMemory m_solid_memory = VK_NULL_HANDLE;
 
     // Resources
     VkImage m_input_image = VK_NULL_HANDLE;
@@ -54,13 +57,18 @@ private:
     VkDeviceMemory m_velocity_image_memory = VK_NULL_HANDLE;
     VkImageView m_velocity_image_view = VK_NULL_HANDLE;
 
+    VkImage m_solid_image = VK_NULL_HANDLE;
+    VkDeviceMemory m_solid_image_memory = VK_NULL_HANDLE;
+    VkImageView m_solid_image_view = VK_NULL_HANDLE;
+
     std::shared_ptr<image> m_output_image;
 
     // Pipeline
     VkRenderPass m_render_pass = VK_NULL_HANDLE;
     VkDescriptorSetLayout m_descriptor_set_layout = VK_NULL_HANDLE;
     VkPipelineLayout m_pipeline_layout = VK_NULL_HANDLE;
-    VkPipeline m_pipeline = VK_NULL_HANDLE;
+    VkPipeline m_background_pipeline = VK_NULL_HANDLE;
+    VkPipeline m_streamlines_pipeline = VK_NULL_HANDLE;
     VkDescriptorPool m_descriptor_pool = VK_NULL_HANDLE;
     VkDescriptorSet m_descriptor_set = VK_NULL_HANDLE;
 

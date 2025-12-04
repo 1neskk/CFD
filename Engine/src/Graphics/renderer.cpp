@@ -36,7 +36,8 @@ renderer::~renderer() {
         if (m_render_finished_semaphores[i]) vkDestroySemaphore(m_device, m_render_finished_semaphores[i], nullptr);
     }
     if (m_framebuffer) vkDestroyFramebuffer(m_device, m_framebuffer, nullptr);
-    if (m_pipeline) vkDestroyPipeline(m_device, m_pipeline, nullptr);
+    if (m_background_pipeline) vkDestroyPipeline(m_device, m_background_pipeline, nullptr);
+    if (m_streamlines_pipeline) vkDestroyPipeline(m_device, m_streamlines_pipeline, nullptr);
     if (m_pipeline_layout) vkDestroyPipelineLayout(m_device, m_pipeline_layout, nullptr);
     if (m_descriptor_pool) vkDestroyDescriptorPool(m_device, m_descriptor_pool, nullptr);
     if (m_descriptor_set_layout) vkDestroyDescriptorSetLayout(m_device, m_descriptor_set_layout, nullptr);
@@ -58,6 +59,13 @@ renderer::~renderer() {
     if (m_velocity_image_view) vkDestroyImageView(m_device, m_velocity_image_view, nullptr);
     if (m_velocity_image) vkDestroyImage(m_device, m_velocity_image, nullptr);
     if (m_velocity_image_memory) vkFreeMemory(m_device, m_velocity_image_memory, nullptr);
+
+    if (m_solid_buffer) vkDestroyBuffer(m_device, m_solid_buffer, nullptr);
+    if (m_solid_memory) vkFreeMemory(m_device, m_solid_memory, nullptr);
+
+    if (m_solid_image_view) vkDestroyImageView(m_device, m_solid_image_view, nullptr);
+    if (m_solid_image) vkDestroyImage(m_device, m_solid_image, nullptr);
+    if (m_solid_image_memory) vkFreeMemory(m_device, m_solid_image_memory, nullptr);
 }
 
 void renderer::init_vulkan_resources() {
@@ -216,6 +224,82 @@ void renderer::init_vulkan_resources() {
         check_vk_result(vkCreateImageView(m_device, &viewInfo, nullptr, &m_velocity_image_view));
     }
 
+    // 2c. Create Solid Interop Buffer & Image (R8_UNORM)
+    {
+        // Buffer
+        size_t solid_buffer_size = m_sim_width * m_sim_height * sizeof(uint8_t);
+        VkBufferCreateInfo bufferInfo = {};
+        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufferInfo.size = solid_buffer_size;
+        bufferInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        VkExternalMemoryBufferCreateInfo externalMemoryBufferInfo = {};
+        externalMemoryBufferInfo.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO;
+        externalMemoryBufferInfo.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+        bufferInfo.pNext = &externalMemoryBufferInfo;
+
+        check_vk_result(vkCreateBuffer(m_device, &bufferInfo, nullptr, &m_solid_buffer));
+
+        VkMemoryRequirements memRequirements;
+        vkGetBufferMemoryRequirements(m_device, m_solid_buffer, &memRequirements);
+
+        VkExportMemoryAllocateInfo exportAllocInfo = {};
+        exportAllocInfo.sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO;
+        exportAllocInfo.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+
+        VkMemoryAllocateInfo allocInfo = {};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memRequirements.size;
+        allocInfo.memoryTypeIndex = utils::find_memory_type(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        allocInfo.pNext = &exportAllocInfo;
+
+        check_vk_result(vkAllocateMemory(m_device, &allocInfo, nullptr, &m_solid_memory));
+        check_vk_result(vkBindBufferMemory(m_device, m_solid_buffer, m_solid_memory, 0));
+
+        // Image
+        VkImageCreateInfo imageInfo = {};
+        imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        imageInfo.imageType = VK_IMAGE_TYPE_2D;
+        imageInfo.extent.width = m_sim_width;
+        imageInfo.extent.height = m_sim_height;
+        imageInfo.extent.depth = 1;
+        imageInfo.mipLevels = 1;
+        imageInfo.arrayLayers = 1;
+        imageInfo.format = VK_FORMAT_R8_UNORM;
+        imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+        imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        check_vk_result(vkCreateImage(m_device, &imageInfo, nullptr, &m_solid_image));
+
+        vkGetImageMemoryRequirements(m_device, m_solid_image, &memRequirements);
+        
+        // Remove export info for image memory (not exported)
+        allocInfo.pNext = nullptr; 
+        allocInfo.allocationSize = memRequirements.size;
+        allocInfo.memoryTypeIndex = utils::find_memory_type(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+        check_vk_result(vkAllocateMemory(m_device, &allocInfo, nullptr, &m_solid_image_memory));
+        check_vk_result(vkBindImageMemory(m_device, m_solid_image, m_solid_image_memory, 0));
+
+        // Image View
+        VkImageViewCreateInfo viewInfo = {};
+        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewInfo.image = m_solid_image;
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.format = VK_FORMAT_R8_UNORM;
+        viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        viewInfo.subresourceRange.baseMipLevel = 0;
+        viewInfo.subresourceRange.levelCount = 1;
+        viewInfo.subresourceRange.baseArrayLayer = 0;
+        viewInfo.subresourceRange.layerCount = 1;
+
+        check_vk_result(vkCreateImageView(m_device, &viewInfo, nullptr, &m_solid_image_view));
+    }
+
     // 3. Create Output Image
     m_output_image = std::make_shared<image>(m_width, m_height, image_type::rgba);
 
@@ -270,14 +354,14 @@ void renderer::create_pipeline() {
     // Descriptor Set Layout
     VkDescriptorSetLayoutBinding bindings[2] = {};
     
-    // Density binding
+    // Binding 0: Velocity
     bindings[0].binding = 0;
     bindings[0].descriptorCount = 1;
     bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     bindings[0].pImmutableSamplers = nullptr;
     bindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    // Velocity binding
+    // Binding 1: Solid
     bindings[1].binding = 1;
     bindings[1].descriptorCount = 1;
     bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -299,25 +383,15 @@ void renderer::create_pipeline() {
 
     check_vk_result(vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &m_pipeline_layout));
 
-    // Shaders
+    // --- Common Pipeline State ---
     auto vertShaderModule = create_shader_module_from_file("Engine/src/Graphics/Shaders/quad.vert.spv");
-    auto fragShaderModule = create_shader_module_from_file("Engine/src/Graphics/Shaders/quad.frag.spv");
-
+    
     VkPipelineShaderStageCreateInfo vertShaderStageInfo = {};
     vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
     vertShaderStageInfo.module = vertShaderModule;
     vertShaderStageInfo.pName = "main";
 
-    VkPipelineShaderStageCreateInfo fragShaderStageInfo = {};
-    fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    fragShaderStageInfo.module = fragShaderModule;
-    fragShaderStageInfo.pName = "main";
-
-    VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
-
-    // Vertex Input (Empty, using vertex index trick)
     VkPipelineVertexInputStateCreateInfo vertexInputInfo = {};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
 
@@ -348,7 +422,7 @@ void renderer::create_pipeline() {
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
     rasterizer.cullMode = VK_CULL_MODE_NONE;
-    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE; // Full screen triangle winding
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
 
     VkPipelineMultisampleStateCreateInfo multisampling = {};
@@ -356,34 +430,94 @@ void renderer::create_pipeline() {
     multisampling.sampleShadingEnable = VK_FALSE;
     multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
-    VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
-    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable = VK_FALSE;
+    // --- 1. Background Pipeline (Opaque) ---
+    {
+        auto fragShaderModule = create_shader_module_from_file("Engine/src/Graphics/Shaders/background.frag.spv");
 
-    VkPipelineColorBlendStateCreateInfo colorBlending = {};
-    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    colorBlending.logicOpEnable = VK_FALSE;
-    colorBlending.attachmentCount = 1;
-    colorBlending.pAttachments = &colorBlendAttachment;
+        VkPipelineShaderStageCreateInfo fragShaderStageInfo = {};
+        fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+        fragShaderStageInfo.module = fragShaderModule;
+        fragShaderStageInfo.pName = "main";
 
-    VkGraphicsPipelineCreateInfo pipelineInfo = {};
-    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipelineInfo.stageCount = 2;
-    pipelineInfo.pStages = shaderStages;
-    pipelineInfo.pVertexInputState = &vertexInputInfo;
-    pipelineInfo.pInputAssemblyState = &inputAssembly;
-    pipelineInfo.pViewportState = &viewportState;
-    pipelineInfo.pRasterizationState = &rasterizer;
-    pipelineInfo.pMultisampleState = &multisampling;
-    pipelineInfo.pColorBlendState = &colorBlending;
-    pipelineInfo.pDynamicState = &dynamicState;
-    pipelineInfo.layout = m_pipeline_layout;
-    pipelineInfo.renderPass = m_render_pass;
-    pipelineInfo.subpass = 0;
+        VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
 
-    check_vk_result(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_pipeline));
+        VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
+        colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        colorBlendAttachment.blendEnable = VK_FALSE;
 
-    vkDestroyShaderModule(m_device, fragShaderModule, nullptr);
+        VkPipelineColorBlendStateCreateInfo colorBlending = {};
+        colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+        colorBlending.logicOpEnable = VK_FALSE;
+        colorBlending.attachmentCount = 1;
+        colorBlending.pAttachments = &colorBlendAttachment;
+
+        VkGraphicsPipelineCreateInfo pipelineInfo = {};
+        pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+        pipelineInfo.stageCount = 2;
+        pipelineInfo.pStages = shaderStages;
+        pipelineInfo.pVertexInputState = &vertexInputInfo;
+        pipelineInfo.pInputAssemblyState = &inputAssembly;
+        pipelineInfo.pViewportState = &viewportState;
+        pipelineInfo.pRasterizationState = &rasterizer;
+        pipelineInfo.pMultisampleState = &multisampling;
+        pipelineInfo.pColorBlendState = &colorBlending;
+        pipelineInfo.pDynamicState = &dynamicState;
+        pipelineInfo.layout = m_pipeline_layout;
+        pipelineInfo.renderPass = m_render_pass;
+        pipelineInfo.subpass = 0;
+
+        check_vk_result(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_background_pipeline));
+        vkDestroyShaderModule(m_device, fragShaderModule, nullptr);
+    }
+
+    // --- 2. Streamlines Pipeline (Transparent) ---
+    {
+        auto fragShaderModule = create_shader_module_from_file("Engine/src/Graphics/Shaders/streamlines.frag.spv");
+
+        VkPipelineShaderStageCreateInfo fragShaderStageInfo = {};
+        fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+        fragShaderStageInfo.module = fragShaderModule;
+        fragShaderStageInfo.pName = "main";
+
+        VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
+
+        VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
+        colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        colorBlendAttachment.blendEnable = VK_TRUE;
+        colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+        colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+        colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+
+        VkPipelineColorBlendStateCreateInfo colorBlending = {};
+        colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+        colorBlending.logicOpEnable = VK_FALSE;
+        colorBlending.attachmentCount = 1;
+        colorBlending.pAttachments = &colorBlendAttachment;
+
+        VkGraphicsPipelineCreateInfo pipelineInfo = {};
+        pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+        pipelineInfo.stageCount = 2;
+        pipelineInfo.pStages = shaderStages;
+        pipelineInfo.pVertexInputState = &vertexInputInfo;
+        pipelineInfo.pInputAssemblyState = &inputAssembly;
+        pipelineInfo.pViewportState = &viewportState;
+        pipelineInfo.pRasterizationState = &rasterizer;
+        pipelineInfo.pMultisampleState = &multisampling;
+        pipelineInfo.pColorBlendState = &colorBlending;
+        pipelineInfo.pDynamicState = &dynamicState;
+        pipelineInfo.layout = m_pipeline_layout;
+        pipelineInfo.renderPass = m_render_pass;
+        pipelineInfo.subpass = 0;
+
+        check_vk_result(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_streamlines_pipeline));
+        vkDestroyShaderModule(m_device, fragShaderModule, nullptr);
+    }
+
     vkDestroyShaderModule(m_device, vertShaderModule, nullptr);
 
     // Descriptor Pool & Set
@@ -407,15 +541,15 @@ void renderer::create_pipeline() {
 
     check_vk_result(vkAllocateDescriptorSets(m_device, &allocInfo, &m_descriptor_set));
 
-    VkDescriptorImageInfo densityInfo = {};
-    densityInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    densityInfo.imageView = m_input_image_view;
-    densityInfo.sampler = m_input_sampler;
-
     VkDescriptorImageInfo velocityInfo = {};
     velocityInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     velocityInfo.imageView = m_velocity_image_view;
     velocityInfo.sampler = m_input_sampler;
+
+    VkDescriptorImageInfo solidInfo = {};
+    solidInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    solidInfo.imageView = m_solid_image_view;
+    solidInfo.sampler = m_input_sampler;
 
     VkWriteDescriptorSet descriptorWrites[2] = {};
 
@@ -425,7 +559,7 @@ void renderer::create_pipeline() {
     descriptorWrites[0].dstArrayElement = 0;
     descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     descriptorWrites[0].descriptorCount = 1;
-    descriptorWrites[0].pImageInfo = &densityInfo;
+    descriptorWrites[0].pImageInfo = &velocityInfo;
 
     descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     descriptorWrites[1].dstSet = m_descriptor_set;
@@ -433,7 +567,7 @@ void renderer::create_pipeline() {
     descriptorWrites[1].dstArrayElement = 0;
     descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     descriptorWrites[1].descriptorCount = 1;
-    descriptorWrites[1].pImageInfo = &velocityInfo;
+    descriptorWrites[1].pImageInfo = &solidInfo;
 
     vkUpdateDescriptorSets(m_device, 2, descriptorWrites, 0, nullptr);
 }
@@ -555,6 +689,22 @@ int renderer::get_velocity_fd() {
     return fd;
 }
 
+int renderer::get_solid_fd() {
+    int fd;
+    VkMemoryGetFdInfoKHR memoryGetFdInfo = {};
+    memoryGetFdInfo.sType = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR;
+    memoryGetFdInfo.memory = m_solid_memory;
+    memoryGetFdInfo.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+
+    auto vkGetMemoryFdKHR = (PFN_vkGetMemoryFdKHR)vkGetDeviceProcAddr(m_device, "vkGetMemoryFdKHR");
+    if (!vkGetMemoryFdKHR) {
+        throw std::runtime_error("Failed to load vkGetMemoryFdKHR");
+    }
+
+    check_vk_result(vkGetMemoryFdKHR(m_device, &memoryGetFdInfo, &fd));
+    return fd;
+}
+
 void renderer::update_sim_data() {
     cudaDeviceSynchronize();
     vkResetCommandBuffer(m_transfer_command_buffer, 0);
@@ -566,15 +716,19 @@ void renderer::update_sim_data() {
     check_vk_result(vkBeginCommandBuffer(m_transfer_command_buffer, &beginInfo));
 
     // Transition Images to Transfer Dst
-    VkImageMemoryBarrier barriers[2] = {};
+    // Transition Images to Transfer Dst
+    VkImageMemoryBarrier barriers[3] = {};
     
-    // Density
+    // Density (Not used in this pass but kept for consistency if needed, or we can skip)
+    // We skip density for now as we are focusing on Velocity + Solid
+
+    // Velocity
     barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barriers[0].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     barriers[0].newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barriers[0].image = m_input_image;
+    barriers[0].image = m_velocity_image;
     barriers[0].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     barriers[0].subresourceRange.baseMipLevel = 0;
     barriers[0].subresourceRange.levelCount = 1;
@@ -583,13 +737,13 @@ void renderer::update_sim_data() {
     barriers[0].srcAccessMask = 0;
     barriers[0].dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 
-    // Velocity
+    // Solid
     barriers[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barriers[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     barriers[1].newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     barriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barriers[1].image = m_velocity_image;
+    barriers[1].image = m_solid_image;
     barriers[1].subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     barriers[1].subresourceRange.baseMipLevel = 0;
     barriers[1].subresourceRange.levelCount = 1;
@@ -600,7 +754,7 @@ void renderer::update_sim_data() {
 
     vkCmdPipelineBarrier(m_transfer_command_buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 2, barriers);
 
-    // Copy Density
+    // Copy Velocity
     VkBufferImageCopy region = {};
     region.bufferOffset = 0;
     region.bufferRowLength = 0;
@@ -612,10 +766,10 @@ void renderer::update_sim_data() {
     region.imageOffset = {0, 0, 0};
     region.imageExtent = {(uint32_t)m_sim_width, (uint32_t)m_sim_height, 1};
 
-    vkCmdCopyBufferToImage(m_transfer_command_buffer, m_density_buffer, m_input_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-
-    // Copy Velocity
     vkCmdCopyBufferToImage(m_transfer_command_buffer, m_velocity_buffer, m_velocity_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+    // Copy Solid
+    vkCmdCopyBufferToImage(m_transfer_command_buffer, m_solid_buffer, m_solid_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
     // Transition to Shader Read
     barriers[0].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
@@ -684,9 +838,14 @@ void renderer::render() {
     scissor.extent = {(uint32_t)m_width, (uint32_t)m_height};
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
+    // Pass 1: Background
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_background_pipeline);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline_layout, 0, 1, &m_descriptor_set, 0, nullptr);
+    vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 
+    // Pass 2: Streamlines
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_streamlines_pipeline);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline_layout, 0, 1, &m_descriptor_set, 0, nullptr);
     vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 
     vkCmdEndRenderPass(commandBuffer);

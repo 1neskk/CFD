@@ -166,6 +166,9 @@ lbm_solver::~lbm_solver() {
     if (m_external_curl) {
         cudaDestroyExternalMemory(m_external_curl);
     }
+    if (m_external_solid) {
+        cudaDestroyExternalMemory(m_external_solid);
+    }
 }
 
 void lbm_solver::init() {
@@ -195,7 +198,7 @@ __global__ void k_add_solid_rect(unsigned char* solid, int width, int height, in
     if (x >= width || y >= height) return;
 
     if (x >= rx && x < rx + rw && y >= ry && y < ry + rh) {
-        solid[idx] = 1;
+        solid[idx] = 255;
     }
 }
 
@@ -306,4 +309,28 @@ void lbm_solver::register_external_curl(int fd, size_t size) {
 
     // Replace d_curl with a non-owning buffer wrapping the mapped pointer
     d_curl = cuda_buffer<float>(static_cast<float*>(mapped_ptr), num_cells, false);
+}
+
+void lbm_solver::register_external_solid(int fd, size_t size) {
+    cudaExternalMemoryHandleDesc externalMemoryHandleDesc = {};
+    externalMemoryHandleDesc.type = cudaExternalMemoryHandleTypeOpaqueFd;
+    externalMemoryHandleDesc.handle.fd = fd;
+    externalMemoryHandleDesc.size = size;
+
+    if (cudaImportExternalMemory(&m_external_solid, &externalMemoryHandleDesc) != cudaSuccess) {
+        throw std::runtime_error("Failed to import external solid memory to CUDA");
+    }
+
+    cudaExternalMemoryBufferDesc bufferDesc = {};
+    bufferDesc.offset = 0;
+    bufferDesc.size = size;
+    bufferDesc.flags = 0;
+
+    void* mapped_ptr = nullptr;
+    if (cudaExternalMemoryGetMappedBuffer(&mapped_ptr, m_external_solid, &bufferDesc) != cudaSuccess) {
+        throw std::runtime_error("Failed to map external solid memory to CUDA pointer");
+    }
+
+    // Replace d_solid with a non-owning buffer wrapping the mapped pointer
+    d_solid = cuda_buffer<unsigned char>(static_cast<unsigned char*>(mapped_ptr), num_cells, false);
 }
