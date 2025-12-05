@@ -7,18 +7,19 @@
 #include "vulkan_cuda_buffer.cuh"
 #include "cuda_buffer.cuh"
 #include "vk_cuda_semaphore.h"
+#include "camera.h"
 
 class renderer {
 public:
-    renderer(uint32_t width, uint32_t height);
+    renderer(uint32_t width, uint32_t height, uint32_t depth);
     ~renderer();
 
     void update_sim_data();
+    void update_camera(float dt);
     void render();
     
     std::shared_ptr<image> get_output_image() const { return m_output_image; }
     void resize(uint32_t width, uint32_t height);
-    int get_density_fd();
     int get_velocity_fd();
     int get_solid_fd();
 
@@ -37,20 +38,16 @@ private:
     uint32_t m_height;
     uint32_t m_sim_width;
     uint32_t m_sim_height;
+    uint32_t m_sim_depth;
     VkDevice m_device;
 
     // Interop
-    VkBuffer m_density_buffer = VK_NULL_HANDLE;
-    VkDeviceMemory m_density_memory = VK_NULL_HANDLE;
     VkBuffer m_velocity_buffer = VK_NULL_HANDLE;
     VkDeviceMemory m_velocity_memory = VK_NULL_HANDLE;
     VkBuffer m_solid_buffer = VK_NULL_HANDLE;
     VkDeviceMemory m_solid_memory = VK_NULL_HANDLE;
 
     // Resources
-    VkImage m_input_image = VK_NULL_HANDLE;
-    VkDeviceMemory m_input_image_memory = VK_NULL_HANDLE;
-    VkImageView m_input_image_view = VK_NULL_HANDLE;
     VkSampler m_input_sampler = VK_NULL_HANDLE;
 
     VkImage m_velocity_image = VK_NULL_HANDLE;
@@ -61,6 +58,13 @@ private:
     VkDeviceMemory m_solid_image_memory = VK_NULL_HANDLE;
     VkImageView m_solid_image_view = VK_NULL_HANDLE;
 
+    // Camera
+    std::shared_ptr<camera> m_camera;
+    VkBuffer m_camera_buffer = VK_NULL_HANDLE;
+    VkDeviceMemory m_camera_memory = VK_NULL_HANDLE;
+    void* m_camera_mapped_memory = nullptr;
+    size_t m_camera_buffer_size = 0;
+
     std::shared_ptr<image> m_output_image;
 
     // Pipeline
@@ -70,7 +74,7 @@ private:
     VkPipeline m_background_pipeline = VK_NULL_HANDLE;
     VkPipeline m_streamlines_pipeline = VK_NULL_HANDLE;
     VkDescriptorPool m_descriptor_pool = VK_NULL_HANDLE;
-    VkDescriptorSet m_descriptor_set = VK_NULL_HANDLE;
+    std::vector<VkDescriptorSet> m_descriptor_sets;
 
     VkFramebuffer m_framebuffer = VK_NULL_HANDLE;
     VkCommandPool m_command_pool = VK_NULL_HANDLE;

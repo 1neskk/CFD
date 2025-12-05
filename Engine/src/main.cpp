@@ -9,18 +9,18 @@
 class cfd final : public layer {
 public:
     cfd() {
-        m_renderer = std::make_unique<renderer>(400, 400);
-        
-        m_solver = std::make_unique<lbm_solver>(400, 400);
+        m_renderer = std::make_unique<renderer>(400, 400, 100);
+        m_solver = std::make_unique<lbm_solver>(400, 100, 100);
         
         // Register external memory
-        m_solver->register_external_curl(m_renderer->get_density_fd(), 400 * 400 * sizeof(float));
-        m_solver->register_external_velocity(m_renderer->get_velocity_fd(), 400 * 400 * sizeof(float) * 2);
-        m_solver->register_external_solid(m_renderer->get_solid_fd(), 400 * 400 * sizeof(uint8_t));
+        // Density is not used in shader yet, but we can register it or skip. Let's skip for now as we use Velocity magnitude.
+        
+        m_solver->register_external_velocity(m_renderer->get_velocity_fd(), 400 * 100 * 100 * sizeof(float) * 4);
+        m_solver->register_external_solid(m_renderer->get_solid_fd(), 400 * 100 * 100 * sizeof(uint8_t));
         
         m_solver->init();
         
-        lbm_solver::Rect rect = {150, 150, 100, 100};
+        lbm_solver::Rect rect = {150, 40, 40, 20, 20, 20};
         m_solver->add_solid(rect);
 
 #ifdef _DEBUG
@@ -31,6 +31,7 @@ public:
     virtual void on_update(const float ts) override {
         m_solver->step();
         m_renderer->update_sim_data();
+        m_renderer->update_camera(ts);
     }
 
     virtual void on_render() override {

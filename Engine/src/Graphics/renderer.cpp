@@ -18,12 +18,16 @@ namespace utils {
     }
 }
 
-renderer::renderer(uint32_t width, uint32_t height) : m_width(width), m_height(height), m_sim_width(width), m_sim_height(height) {
+renderer::renderer(uint32_t width, uint32_t height, uint32_t depth) 
+    : m_width(width), m_height(height), m_sim_width(width), m_sim_height(height), m_sim_depth(depth) {
     m_device = application::get_device();
 #ifdef _DEBUG
-    LOG_INFO("[Renderer] Initializing renderer with width: {} height: {}", width, height);
+    LOG_INFO("[Renderer] Initializing renderer with width: {} height: {} depth: {}", width, height, depth);
 #endif
     init_vulkan_resources();
+
+    m_camera = std::make_shared<camera>(45.0f, 0.1f, 100.0f, glm::vec3(0.0f, 0.0f, 2.0f), glm::vec3(0.0f, 0.0f, -1.0f));
+    m_camera->resize(width, height);
 }
 
 renderer::~renderer() {
@@ -41,20 +45,13 @@ renderer::~renderer() {
     if (m_pipeline_layout) vkDestroyPipelineLayout(m_device, m_pipeline_layout, nullptr);
     if (m_descriptor_pool) vkDestroyDescriptorPool(m_device, m_descriptor_pool, nullptr);
     if (m_descriptor_set_layout) vkDestroyDescriptorSetLayout(m_device, m_descriptor_set_layout, nullptr);
-    if (m_descriptor_set_layout) vkDestroyDescriptorSetLayout(m_device, m_descriptor_set_layout, nullptr);
     if (m_render_pass) vkDestroyRenderPass(m_device, m_render_pass, nullptr);
     if (m_command_pool) vkDestroyCommandPool(m_device, m_command_pool, nullptr);
-
-    if (m_density_buffer) vkDestroyBuffer(m_device, m_density_buffer, nullptr);
-    if (m_density_memory) vkFreeMemory(m_device, m_density_memory, nullptr);
 
     if (m_velocity_buffer) vkDestroyBuffer(m_device, m_velocity_buffer, nullptr);
     if (m_velocity_memory) vkFreeMemory(m_device, m_velocity_memory, nullptr);
 
     if (m_input_sampler) vkDestroySampler(m_device, m_input_sampler, nullptr);
-    if (m_input_image_view) vkDestroyImageView(m_device, m_input_image_view, nullptr);
-    if (m_input_image) vkDestroyImage(m_device, m_input_image, nullptr);
-    if (m_input_image_memory) vkFreeMemory(m_device, m_input_image_memory, nullptr);
 
     if (m_velocity_image_view) vkDestroyImageView(m_device, m_velocity_image_view, nullptr);
     if (m_velocity_image) vkDestroyImage(m_device, m_velocity_image, nullptr);
@@ -66,16 +63,19 @@ renderer::~renderer() {
     if (m_solid_image_view) vkDestroyImageView(m_device, m_solid_image_view, nullptr);
     if (m_solid_image) vkDestroyImage(m_device, m_solid_image, nullptr);
     if (m_solid_image_memory) vkFreeMemory(m_device, m_solid_image_memory, nullptr);
+
+    if (m_camera_buffer) vkDestroyBuffer(m_device, m_camera_buffer, nullptr);
+    if (m_camera_memory) vkFreeMemory(m_device, m_camera_memory, nullptr);
 }
 
 void renderer::init_vulkan_resources() {
-    // 1. Create Density Interop Buffer
-    // Size = width * height * sizeof(float) (Density is scalar)
-    size_t buffer_size = m_sim_width * m_sim_height * sizeof(float);
-    
+    // 1. Create Velocity Interop Buffer
+    // Size = width * height * depth * sizeof(float4) (Using float4 for alignment/simplicity in 3D)
+    // Size = width * height * depth * sizeof(float4) (Using float4 for alignment/simplicity in 3D)
+    size_t velocity_buffer_size = m_sim_width * m_sim_height * m_sim_depth * sizeof(float) * 4;
     VkBufferCreateInfo bufferInfo = {};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = buffer_size;
+    bufferInfo.size = velocity_buffer_size;
     bufferInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
@@ -84,10 +84,10 @@ void renderer::init_vulkan_resources() {
     externalMemoryBufferInfo.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
     bufferInfo.pNext = &externalMemoryBufferInfo;
 
-    check_vk_result(vkCreateBuffer(m_device, &bufferInfo, nullptr, &m_density_buffer));
+    check_vk_result(vkCreateBuffer(m_device, &bufferInfo, nullptr, &m_velocity_buffer));
 
     VkMemoryRequirements memRequirements;
-    vkGetBufferMemoryRequirements(m_device, m_density_buffer, &memRequirements);
+    vkGetBufferMemoryRequirements(m_device, m_velocity_buffer, &memRequirements);
 
     VkExportMemoryAllocateInfo exportAllocInfo = {};
     exportAllocInfo.sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO;
@@ -99,67 +99,11 @@ void renderer::init_vulkan_resources() {
     allocInfo.memoryTypeIndex = utils::find_memory_type(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     allocInfo.pNext = &exportAllocInfo;
 
-    check_vk_result(vkAllocateMemory(m_device, &allocInfo, nullptr, &m_density_memory));
-    check_vk_result(vkBindBufferMemory(m_device, m_density_buffer, m_density_memory, 0));
-
-    // 1b. Create Velocity Interop Buffer
-    // Size = width * height * sizeof(float2)
-    size_t velocity_buffer_size = m_sim_width * m_sim_height * sizeof(float) * 2;
-    bufferInfo.size = velocity_buffer_size;
-
-    check_vk_result(vkCreateBuffer(m_device, &bufferInfo, nullptr, &m_velocity_buffer));
-
-    vkGetBufferMemoryRequirements(m_device, m_velocity_buffer, &memRequirements);
-    allocInfo.allocationSize = memRequirements.size;
-    allocInfo.memoryTypeIndex = utils::find_memory_type(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
     check_vk_result(vkAllocateMemory(m_device, &allocInfo, nullptr, &m_velocity_memory));
     check_vk_result(vkBindBufferMemory(m_device, m_velocity_buffer, m_velocity_memory, 0));
 
-    // 2. Create Input Image (R32F)
+    // 2. Create Input Image (R32F) - REMOVED
     {
-        VkImageCreateInfo imageInfo = {};
-        imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        imageInfo.imageType = VK_IMAGE_TYPE_2D;
-        imageInfo.extent.width = m_sim_width;
-        imageInfo.extent.height = m_sim_height;
-        imageInfo.extent.depth = 1;
-        imageInfo.mipLevels = 1;
-        imageInfo.arrayLayers = 1;
-        imageInfo.format = VK_FORMAT_R32_SFLOAT;
-        imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-        imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-        imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-        imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-        check_vk_result(vkCreateImage(m_device, &imageInfo, nullptr, &m_input_image));
-
-        VkMemoryRequirements memRequirements;
-        vkGetImageMemoryRequirements(m_device, m_input_image, &memRequirements);
-
-        VkMemoryAllocateInfo allocInfo = {};
-        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        allocInfo.allocationSize = memRequirements.size;
-        allocInfo.memoryTypeIndex = utils::find_memory_type(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-        check_vk_result(vkAllocateMemory(m_device, &allocInfo, nullptr, &m_input_image_memory));
-        check_vk_result(vkBindImageMemory(m_device, m_input_image, m_input_image_memory, 0));
-
-        // Create Image View
-        VkImageViewCreateInfo viewInfo = {};
-        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        viewInfo.image = m_input_image;
-        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        viewInfo.format = VK_FORMAT_R32_SFLOAT;
-        viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        viewInfo.subresourceRange.baseMipLevel = 0;
-        viewInfo.subresourceRange.levelCount = 1;
-        viewInfo.subresourceRange.baseArrayLayer = 0;
-        viewInfo.subresourceRange.layerCount = 1;
-
-        check_vk_result(vkCreateImageView(m_device, &viewInfo, nullptr, &m_input_image_view));
-
         // Create Sampler
         VkSamplerCreateInfo samplerInfo = {};
         samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -183,13 +127,13 @@ void renderer::init_vulkan_resources() {
     {
         VkImageCreateInfo imageInfo = {};
         imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        imageInfo.imageType = VK_IMAGE_TYPE_2D;
+        imageInfo.imageType = VK_IMAGE_TYPE_3D;
         imageInfo.extent.width = m_sim_width;
         imageInfo.extent.height = m_sim_height;
-        imageInfo.extent.depth = 1;
+        imageInfo.extent.depth = m_sim_depth;
         imageInfo.mipLevels = 1;
         imageInfo.arrayLayers = 1;
-        imageInfo.format = VK_FORMAT_R32G32_SFLOAT;
+        imageInfo.format = VK_FORMAT_R32G32B32A32_SFLOAT; // Use float4 for velocity in 3D
         imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
         imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
@@ -213,8 +157,8 @@ void renderer::init_vulkan_resources() {
         VkImageViewCreateInfo viewInfo = {};
         viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
         viewInfo.image = m_velocity_image;
-        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        viewInfo.format = VK_FORMAT_R32G32_SFLOAT;
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_3D;
+        viewInfo.format = VK_FORMAT_R32G32B32A32_SFLOAT;
         viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         viewInfo.subresourceRange.baseMipLevel = 0;
         viewInfo.subresourceRange.levelCount = 1;
@@ -227,7 +171,7 @@ void renderer::init_vulkan_resources() {
     // 2c. Create Solid Interop Buffer & Image (R8_UNORM)
     {
         // Buffer
-        size_t solid_buffer_size = m_sim_width * m_sim_height * sizeof(uint8_t);
+        size_t solid_buffer_size = m_sim_width * m_sim_height * m_sim_depth * sizeof(uint8_t);
         VkBufferCreateInfo bufferInfo = {};
         bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         bufferInfo.size = solid_buffer_size;
@@ -260,10 +204,10 @@ void renderer::init_vulkan_resources() {
         // Image
         VkImageCreateInfo imageInfo = {};
         imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        imageInfo.imageType = VK_IMAGE_TYPE_2D;
+        imageInfo.imageType = VK_IMAGE_TYPE_3D;
         imageInfo.extent.width = m_sim_width;
         imageInfo.extent.height = m_sim_height;
-        imageInfo.extent.depth = 1;
+        imageInfo.extent.depth = m_sim_depth;
         imageInfo.mipLevels = 1;
         imageInfo.arrayLayers = 1;
         imageInfo.format = VK_FORMAT_R8_UNORM;
@@ -289,7 +233,7 @@ void renderer::init_vulkan_resources() {
         VkImageViewCreateInfo viewInfo = {};
         viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
         viewInfo.image = m_solid_image;
-        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_3D;
         viewInfo.format = VK_FORMAT_R8_UNORM;
         viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         viewInfo.subresourceRange.baseMipLevel = 0;
@@ -298,6 +242,51 @@ void renderer::init_vulkan_resources() {
         viewInfo.subresourceRange.layerCount = 1;
 
         check_vk_result(vkCreateImageView(m_device, &viewInfo, nullptr, &m_solid_image_view));
+    }
+
+    // 2d. Create Camera Uniform Buffer (Dynamic)
+    {
+        VkPhysicalDeviceProperties properties;
+        vkGetPhysicalDeviceProperties(application::get_physical_device(), &properties);
+        size_t minUboAlignment = properties.limits.minUniformBufferOffsetAlignment;
+        
+        m_camera_buffer_size = sizeof(device_camera);
+        if (minUboAlignment > 0) {
+            m_camera_buffer_size = (m_camera_buffer_size + minUboAlignment - 1) & ~(minUboAlignment - 1);
+        }
+
+        VkBufferCreateInfo bufferInfo = {};
+        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufferInfo.size = m_camera_buffer_size * MAX_FRAMES_IN_FLIGHT;
+        bufferInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+        bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        check_vk_result(vkCreateBuffer(m_device, &bufferInfo, nullptr, &m_camera_buffer));
+
+        VkMemoryRequirements memRequirements;
+        vkGetBufferMemoryRequirements(m_device, m_camera_buffer, &memRequirements);
+
+        VkMemoryAllocateInfo allocInfo = {};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memRequirements.size;
+        allocInfo.memoryTypeIndex = utils::find_memory_type(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+        check_vk_result(vkAllocateMemory(m_device, &allocInfo, nullptr, &m_camera_memory));
+        check_vk_result(vkBindBufferMemory(m_device, m_camera_buffer, m_camera_memory, 0));
+
+        check_vk_result(vkMapMemory(m_device, m_camera_memory, 0, memRequirements.size, 0, &m_camera_mapped_memory));
+
+#ifdef _DEBUG
+        LOG_INFO("Camera UBO Layout:");
+        LOG_INFO("  Size: {}", sizeof(device_camera));
+        LOG_INFO("  Offset Position: {}", offsetof(device_camera, position));
+        LOG_INFO("  Offset Direction: {}", offsetof(device_camera, direction));
+        LOG_INFO("  Offset Width: {}", offsetof(device_camera, width));
+        LOG_INFO("  Offset Height: {}", offsetof(device_camera, height));
+        LOG_INFO("  Offset InvView: {}", offsetof(device_camera, inverse_view));
+        LOG_INFO("  Offset InvProj: {}", offsetof(device_camera, inverse_projection));
+        LOG_INFO("  Aligned Buffer Size: {}", m_camera_buffer_size);
+#endif
     }
 
     // 3. Create Output Image
@@ -352,7 +341,7 @@ void renderer::create_render_pass() {
 
 void renderer::create_pipeline() {
     // Descriptor Set Layout
-    VkDescriptorSetLayoutBinding bindings[2] = {};
+    VkDescriptorSetLayoutBinding bindings[3] = {};
     
     // Binding 0: Velocity
     bindings[0].binding = 0;
@@ -368,9 +357,16 @@ void renderer::create_pipeline() {
     bindings[1].pImmutableSamplers = nullptr;
     bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
+    // Binding 2: Camera
+    bindings[2].binding = 2;
+    bindings[2].descriptorCount = 1;
+    bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+    bindings[2].pImmutableSamplers = nullptr;
+    bindings[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
     VkDescriptorSetLayoutCreateInfo layoutInfo = {};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 2;
+    layoutInfo.bindingCount = 3;
     layoutInfo.pBindings = bindings;
 
     check_vk_result(vkCreateDescriptorSetLayout(m_device, &layoutInfo, nullptr, &m_descriptor_set_layout));
@@ -430,9 +426,9 @@ void renderer::create_pipeline() {
     multisampling.sampleShadingEnable = VK_FALSE;
     multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
-    // --- 1. Background Pipeline (Opaque) ---
+    // --- 1. Raymarching Pipeline ---
     {
-        auto fragShaderModule = create_shader_module_from_file("Engine/src/Graphics/Shaders/background.frag.spv");
+        auto fragShaderModule = create_shader_module_from_file("Engine/src/Graphics/Shaders/raymarch.frag.spv");
 
         VkPipelineShaderStageCreateInfo fragShaderStageInfo = {};
         fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -444,7 +440,7 @@ void renderer::create_pipeline() {
 
         VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
         colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-        colorBlendAttachment.blendEnable = VK_FALSE;
+        colorBlendAttachment.blendEnable = VK_FALSE; // Raymarching shader handles blending internally/outputs final color
 
         VkPipelineColorBlendStateCreateInfo colorBlending = {};
         colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -467,54 +463,7 @@ void renderer::create_pipeline() {
         pipelineInfo.renderPass = m_render_pass;
         pipelineInfo.subpass = 0;
 
-        check_vk_result(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_background_pipeline));
-        vkDestroyShaderModule(m_device, fragShaderModule, nullptr);
-    }
-
-    // --- 2. Streamlines Pipeline (Transparent) ---
-    {
-        auto fragShaderModule = create_shader_module_from_file("Engine/src/Graphics/Shaders/streamlines.frag.spv");
-
-        VkPipelineShaderStageCreateInfo fragShaderStageInfo = {};
-        fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-        fragShaderStageInfo.module = fragShaderModule;
-        fragShaderStageInfo.pName = "main";
-
-        VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
-
-        VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
-        colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-        colorBlendAttachment.blendEnable = VK_TRUE;
-        colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-        colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-        colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
-        colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-        colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-        colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
-
-        VkPipelineColorBlendStateCreateInfo colorBlending = {};
-        colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-        colorBlending.logicOpEnable = VK_FALSE;
-        colorBlending.attachmentCount = 1;
-        colorBlending.pAttachments = &colorBlendAttachment;
-
-        VkGraphicsPipelineCreateInfo pipelineInfo = {};
-        pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-        pipelineInfo.stageCount = 2;
-        pipelineInfo.pStages = shaderStages;
-        pipelineInfo.pVertexInputState = &vertexInputInfo;
-        pipelineInfo.pInputAssemblyState = &inputAssembly;
-        pipelineInfo.pViewportState = &viewportState;
-        pipelineInfo.pRasterizationState = &rasterizer;
-        pipelineInfo.pMultisampleState = &multisampling;
-        pipelineInfo.pColorBlendState = &colorBlending;
-        pipelineInfo.pDynamicState = &dynamicState;
-        pipelineInfo.layout = m_pipeline_layout;
-        pipelineInfo.renderPass = m_render_pass;
-        pipelineInfo.subpass = 0;
-
-        check_vk_result(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_streamlines_pipeline));
+        check_vk_result(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_background_pipeline)); // Reusing m_background_pipeline handle for now
         vkDestroyShaderModule(m_device, fragShaderModule, nullptr);
     }
 
@@ -523,53 +472,76 @@ void renderer::create_pipeline() {
     // Descriptor Pool & Set
     VkDescriptorPoolSize poolSize = {};
     poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount = 2;
+    poolSize.descriptorCount = 2 * MAX_FRAMES_IN_FLIGHT;
+
+    VkDescriptorPoolSize poolSizeUniform = {};
+    poolSizeUniform.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+    poolSizeUniform.descriptorCount = 1 * MAX_FRAMES_IN_FLIGHT;
+
+    VkDescriptorPoolSize poolSizes[] = {poolSize, poolSizeUniform};
 
     VkDescriptorPoolCreateInfo poolInfo = {};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes = &poolSize;
-    poolInfo.maxSets = 1;
+    poolInfo.poolSizeCount = 2;
+    poolInfo.pPoolSizes = poolSizes;
+    poolInfo.maxSets = MAX_FRAMES_IN_FLIGHT;
 
     check_vk_result(vkCreateDescriptorPool(m_device, &poolInfo, nullptr, &m_descriptor_pool));
 
+    std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, m_descriptor_set_layout);
     VkDescriptorSetAllocateInfo allocInfo = {};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocInfo.descriptorPool = m_descriptor_pool;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &m_descriptor_set_layout;
+    allocInfo.descriptorSetCount = MAX_FRAMES_IN_FLIGHT;
+    allocInfo.pSetLayouts = layouts.data();
 
-    check_vk_result(vkAllocateDescriptorSets(m_device, &allocInfo, &m_descriptor_set));
+    m_descriptor_sets.resize(MAX_FRAMES_IN_FLIGHT);
+    check_vk_result(vkAllocateDescriptorSets(m_device, &allocInfo, m_descriptor_sets.data()));
 
-    VkDescriptorImageInfo velocityInfo = {};
-    velocityInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    velocityInfo.imageView = m_velocity_image_view;
-    velocityInfo.sampler = m_input_sampler;
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        VkDescriptorImageInfo velocityInfo = {};
+        velocityInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        velocityInfo.imageView = m_velocity_image_view;
+        velocityInfo.sampler = m_input_sampler;
 
-    VkDescriptorImageInfo solidInfo = {};
-    solidInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    solidInfo.imageView = m_solid_image_view;
-    solidInfo.sampler = m_input_sampler;
+        VkDescriptorImageInfo solidInfo = {};
+        solidInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        solidInfo.imageView = m_solid_image_view;
+        solidInfo.sampler = m_input_sampler;
 
-    VkWriteDescriptorSet descriptorWrites[2] = {};
+        VkDescriptorBufferInfo cameraInfo = {};
+        cameraInfo.buffer = m_camera_buffer;
+        cameraInfo.offset = 0;
+        cameraInfo.range = sizeof(device_camera);
 
-    descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrites[0].dstSet = m_descriptor_set;
-    descriptorWrites[0].dstBinding = 0;
-    descriptorWrites[0].dstArrayElement = 0;
-    descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    descriptorWrites[0].descriptorCount = 1;
-    descriptorWrites[0].pImageInfo = &velocityInfo;
+        VkWriteDescriptorSet descriptorWrites[3] = {};
 
-    descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrites[1].dstSet = m_descriptor_set;
-    descriptorWrites[1].dstBinding = 1;
-    descriptorWrites[1].dstArrayElement = 0;
-    descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    descriptorWrites[1].descriptorCount = 1;
-    descriptorWrites[1].pImageInfo = &solidInfo;
+        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[0].dstSet = m_descriptor_sets[i];
+        descriptorWrites[0].dstBinding = 0;
+        descriptorWrites[0].dstArrayElement = 0;
+        descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[0].descriptorCount = 1;
+        descriptorWrites[0].pImageInfo = &velocityInfo;
 
-    vkUpdateDescriptorSets(m_device, 2, descriptorWrites, 0, nullptr);
+        descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[1].dstSet = m_descriptor_sets[i];
+        descriptorWrites[1].dstBinding = 1;
+        descriptorWrites[1].dstArrayElement = 0;
+        descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[1].descriptorCount = 1;
+        descriptorWrites[1].pImageInfo = &solidInfo;
+
+        descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[2].dstSet = m_descriptor_sets[i];
+        descriptorWrites[2].dstBinding = 2;
+        descriptorWrites[2].dstArrayElement = 0;
+        descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+        descriptorWrites[2].descriptorCount = 1;
+        descriptorWrites[2].pBufferInfo = &cameraInfo;
+
+        vkUpdateDescriptorSets(m_device, 3, descriptorWrites, 0, nullptr);
+    }
 }
 
 void renderer::create_framebuffers() {
@@ -657,21 +629,7 @@ VkShaderModule renderer::create_shader_module_from_file(const std::string& filep
     return create_shader_module(buffer);
 }
 
-int renderer::get_density_fd() {
-    int fd;
-    VkMemoryGetFdInfoKHR memoryGetFdInfo = {};
-    memoryGetFdInfo.sType = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR;
-    memoryGetFdInfo.memory = m_density_memory;
-    memoryGetFdInfo.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
-
-    auto vkGetMemoryFdKHR = (PFN_vkGetMemoryFdKHR)vkGetDeviceProcAddr(m_device, "vkGetMemoryFdKHR");
-    if (!vkGetMemoryFdKHR) {
-        throw std::runtime_error("Failed to load vkGetMemoryFdKHR");
-    }
-
-    check_vk_result(vkGetMemoryFdKHR(m_device, &memoryGetFdInfo, &fd));
-    return fd;
-}
+// get_density_fd removed
 
 int renderer::get_velocity_fd() {
     int fd;
@@ -764,7 +722,7 @@ void renderer::update_sim_data() {
     region.imageSubresource.baseArrayLayer = 0;
     region.imageSubresource.layerCount = 1;
     region.imageOffset = {0, 0, 0};
-    region.imageExtent = {(uint32_t)m_sim_width, (uint32_t)m_sim_height, 1};
+    region.imageExtent = {(uint32_t)m_sim_width, (uint32_t)m_sim_height, (uint32_t)m_sim_depth};
 
     vkCmdCopyBufferToImage(m_transfer_command_buffer, m_velocity_buffer, m_velocity_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
@@ -797,6 +755,19 @@ void renderer::update_sim_data() {
     check_vk_result(vkQueueWaitIdle(graphicsQueue));
 }
 
+void renderer::update_camera(float dt) {
+    if (m_camera->on_update(dt)) {
+        // Camera updated
+    }
+    
+    // Always update the buffer for the current frame
+    device_camera cam_data;
+    m_camera->allocate_device_resources(cam_data);
+
+    char* mappedData = (char*)m_camera_mapped_memory;
+    memcpy(mappedData + (m_current_frame * m_camera_buffer_size), &cam_data, sizeof(device_camera));
+}
+
 void renderer::render() {
     vkWaitForFences(m_device, 1, &m_render_fences[m_current_frame], VK_TRUE, UINT64_MAX);
     vkResetFences(m_device, 1, &m_render_fences[m_current_frame]);
@@ -822,7 +793,9 @@ void renderer::render() {
     renderPassInfo.clearValueCount = 1;
     renderPassInfo.pClearValues = &clearColor;
 
-    vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBeginRenderPass(m_command_buffers[m_current_frame], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    vkCmdBindPipeline(m_command_buffers[m_current_frame], VK_PIPELINE_BIND_POINT_GRAPHICS, m_background_pipeline); // Using background pipeline handle for raymarching
 
     VkViewport viewport = {};
     viewport.x = 0.0f;
@@ -831,24 +804,19 @@ void renderer::render() {
     viewport.height = (float)m_height;
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
-    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+    vkCmdSetViewport(m_command_buffers[m_current_frame], 0, 1, &viewport);
 
     VkRect2D scissor = {};
     scissor.offset = {0, 0};
     scissor.extent = {(uint32_t)m_width, (uint32_t)m_height};
-    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+    vkCmdSetScissor(m_command_buffers[m_current_frame], 0, 1, &scissor);
 
-    // Pass 1: Background
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_background_pipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline_layout, 0, 1, &m_descriptor_set, 0, nullptr);
-    vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+    uint32_t dynamicOffset = m_current_frame * m_camera_buffer_size;
+    vkCmdBindDescriptorSets(m_command_buffers[m_current_frame], VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline_layout, 0, 1, &m_descriptor_sets[m_current_frame], 1, &dynamicOffset);
 
-    // Pass 2: Streamlines
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_streamlines_pipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline_layout, 0, 1, &m_descriptor_set, 0, nullptr);
-    vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+    vkCmdDraw(m_command_buffers[m_current_frame], 6, 1, 0, 0);
 
-    vkCmdEndRenderPass(commandBuffer);
+    vkCmdEndRenderPass(m_command_buffers[m_current_frame]);
 
     check_vk_result(vkEndCommandBuffer(commandBuffer));
 
@@ -897,6 +865,10 @@ void renderer::resize(uint32_t width, uint32_t height) {
 
     m_width = width;
     m_height = height;
+
+    if (m_camera) {
+        m_camera->resize(width, height);
+    }
 
     if (m_framebuffer) {
         vkDestroyFramebuffer(m_device, m_framebuffer, nullptr);

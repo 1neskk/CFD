@@ -5,7 +5,7 @@
 
 class lbm_solver {
 public:
-    lbm_solver(int width, int height);
+    lbm_solver(int width, int height, int depth);
     ~lbm_solver();
 
     void init();
@@ -13,7 +13,7 @@ public:
     void reset();
 
     struct Rect {
-        int x, y, w, h;
+        int x, y, z, w, h, d;
     };
 
     void add_solid(const Rect& rect);
@@ -24,15 +24,17 @@ public:
 
     // Getters for visualization/interop
     cuda_buffer<float>& get_density() { return d_rho; }
-    cuda_buffer<float2>& get_velocity() { return d_u; }
+    cuda_buffer<float4>& get_velocity() { return d_u; }
     cuda_buffer<unsigned char>& get_solid_mask() { return d_solid; }
 
     int get_width() const { return width; }
     int get_height() const { return height; }
+    int get_depth() const { return depth; }
 
 private:
     int width;
     int height;
+    int depth;
     size_t num_cells;
 
     // Simulation parameters
@@ -40,11 +42,10 @@ private:
     float inlet_velocity = 0.1f;
     
     // Device pointers
-    cuda_buffer<float> d_f;      // Distribution functions (current)
-    cuda_buffer<float> d_f_new;  // Distribution functions (next)
+    cuda_buffer<float> d_f;      // Distribution functions (current) - Size: num_cells * 19
+    cuda_buffer<float> d_f_new;  // Distribution functions (next)    - Size: num_cells * 19
     cuda_buffer<float> d_rho;    // Macroscopic density
-    cuda_buffer<float2> d_u;     // Macroscopic velocity (x, y)
-    // cuda_buffer<float> d_u_mag; // Velocity magnitude (optional, for vis) - Removed for now
+    cuda_buffer<float4> d_u;     // Macroscopic velocity (x, y, z, padding)
     cuda_buffer<unsigned char> d_solid; // Solid mask (0: fluid, 1: solid)
 
     dim3 block_size;
