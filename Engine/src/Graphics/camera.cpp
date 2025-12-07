@@ -39,8 +39,6 @@ bool camera::on_update(float dt) {
         return false;
     }
     
-    LOG_INFO("Camera update: Right mouse button pressed");
-
     input::input::set_cursor_mode(input::cursor_mode::locked);
     bool moved = false;
 
@@ -99,9 +97,6 @@ bool camera::on_update(float dt) {
     if (m_view_dirty) {
         update_view();
         update_projection();
-    }
-    if (moved) {
-        LOG_INFO("Camera moved: Pos({}, {}, {}) Rot({}, {})", m_position.x, m_position.y, m_position.z, yaw_debug, pitch_debug);
     }
     return moved;
 }

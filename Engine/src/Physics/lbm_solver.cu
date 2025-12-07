@@ -201,12 +201,10 @@ lbm_solver::~lbm_solver() {
 
 void lbm_solver::init() {
     k_init<<<grid_size, block_size>>>(d_f.get_data(), d_rho.get_data(), d_u.get_data(), width, height, depth);
-    cudaDeviceSynchronize();
 }
 
 void lbm_solver::step() {
     k_stream_collide<<<grid_size, block_size>>>(d_f.get_data(), d_f_new.get_data(), d_rho.get_data(), d_u.get_data(), d_solid.get_data(), width, height, depth, tau, inlet_velocity);
-    cudaDeviceSynchronize();
 
     compute_curl();
 
@@ -236,7 +234,6 @@ __global__ void k_add_solid_rect(unsigned char* solid, int width, int height, in
 
 void lbm_solver::add_solid(const Rect& rect) {
     k_add_solid_rect<<<grid_size, block_size>>>(d_solid.get_data(), width, height, depth, rect.x, rect.y, rect.z, rect.w, rect.h, rect.d);
-    cudaDeviceSynchronize();
 }
 
 void lbm_solver::register_external_density(int fd, size_t size) {
@@ -339,7 +336,6 @@ __global__ void k_compute_curl(const float4* __restrict__ u, float* __restrict__
 
 void lbm_solver::compute_curl() {
     k_compute_curl<<<grid_size, block_size>>>(d_u.get_data(), d_curl.get_data(), width, height, depth);
-    cudaDeviceSynchronize();
 }
 
 void lbm_solver::register_external_curl(int fd, size_t size) {

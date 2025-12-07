@@ -74,7 +74,7 @@ void main() {
     vec3 rayPos = camPos + tStart * rd;
     vec4 color = vec4(0.0);
     
-    int steps = 128;
+    int steps = 64;
     float stepSize = (tEnd - tStart) / float(steps);
     
     for (int i = 0; i < steps; i++) {

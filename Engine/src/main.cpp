@@ -12,9 +12,6 @@ public:
         m_renderer = std::make_unique<renderer>(400, 400, 100);
         m_solver = std::make_unique<lbm_solver>(400, 100, 100);
         
-        // Register external memory
-        // Density is not used in shader yet, but we can register it or skip. Let's skip for now as we use Velocity magnitude.
-        
         m_solver->register_external_velocity(m_renderer->get_velocity_fd(), 400 * 100 * 100 * sizeof(float) * 4);
         m_solver->register_external_solid(m_renderer->get_solid_fd(), 400 * 100 * 100 * sizeof(uint8_t));
         
@@ -38,6 +35,16 @@ public:
         const auto& io = ImGui::GetIO();
         
         style::theme();
+
+        ImGui::Begin("Settings");
+        ImGui::Text("Last Render Time: %.3fms", m_last_render_time);
+        ImGui::Text("App Frame Time: %.3fms (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
+        
+        bool vsync = application::get().is_vsync_enabled();
+        if (ImGui::Checkbox("VSync", &vsync)) {
+            application::get().toggle_vsync();
+        }
+        ImGui::End();
 
         ImGui::Begin("Viewport", nullptr,
                     ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |

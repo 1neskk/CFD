@@ -275,18 +275,6 @@ void renderer::init_vulkan_resources() {
         check_vk_result(vkBindBufferMemory(m_device, m_camera_buffer, m_camera_memory, 0));
 
         check_vk_result(vkMapMemory(m_device, m_camera_memory, 0, memRequirements.size, 0, &m_camera_mapped_memory));
-
-#ifdef _DEBUG
-        LOG_INFO("Camera UBO Layout:");
-        LOG_INFO("  Size: {}", sizeof(device_camera));
-        LOG_INFO("  Offset Position: {}", offsetof(device_camera, position));
-        LOG_INFO("  Offset Direction: {}", offsetof(device_camera, direction));
-        LOG_INFO("  Offset Width: {}", offsetof(device_camera, width));
-        LOG_INFO("  Offset Height: {}", offsetof(device_camera, height));
-        LOG_INFO("  Offset InvView: {}", offsetof(device_camera, inverse_view));
-        LOG_INFO("  Offset InvProj: {}", offsetof(device_camera, inverse_projection));
-        LOG_INFO("  Aligned Buffer Size: {}", m_camera_buffer_size);
-#endif
     }
 
     // 3. Create Output Image
