@@ -1,7 +1,8 @@
 #include "lbm_solver.cuh"
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
-#include <algorithm>
+
+using namespace cuda_math;
 
 // D3Q19 Constants
 __constant__ float w[19] = {
@@ -30,7 +31,7 @@ __constant__ int inv_dir[19] = {
     18, 17 
 };
 
-__global__ void k_init(float* f, float* rho, float4* u, int width, int height, int depth) {
+__global__ void k_init(float* f, float* rho, vec4* u, int width, int height, int depth) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
     int z = blockIdx.z * blockDim.z + threadIdx.z;
@@ -45,8 +46,8 @@ __global__ void k_init(float* f, float* rho, float4* u, int width, int height, i
     float u_y = 0.0f;
     float u_z = 0.0f;
 
-    // Compute equilibrium
-    float u_sq = u_x * u_x + u_y * u_y + u_z * u_z;
+    // Equilibrium
+    float u_sq = length_sq(vec3(u_x, u_y, u_z));
     for (int k = 0; k < 19; k++) {
         float cu = cx[k] * u_x + cy[k] * u_y + cz[k] * u_z;
         float f_eq = w[k] * r * (1.0f + 3.0f * cu + 4.5f * cu * cu - 1.5f * u_sq);
@@ -54,12 +55,12 @@ __global__ void k_init(float* f, float* rho, float4* u, int width, int height, i
     }
 
     rho[idx] = r;
-    u[idx] = make_float4(u_x, u_y, u_z, 0.0f);
+    u[idx] = vec4(u_x, u_y, u_z, 0.0f);
 }
 
 __global__ void k_stream_collide(
     const float* __restrict__ f_in, float* __restrict__ f_out, 
-    float* __restrict__ rho_out, float4* __restrict__ u_out, 
+    float* __restrict__ rho_out, vec4* __restrict__ u_out, 
     const unsigned char* __restrict__ solid,
     int width, int height, int depth, float tau, float inlet_velocity
 ) {
@@ -73,12 +74,12 @@ __global__ void k_stream_collide(
     int num_cells = width * height * depth;
 
     // 1. Stream & Bounce-back
-    float f_curr[19];
+    float f[19];
     bool is_solid = (solid[idx] > 0);
 
     if (is_solid) {
         rho_out[idx] = 0.0f;
-        u_out[idx] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+        u_out[idx] = vec4(0.0f);
 
         for (int k = 0; k < 19; k++) {
             f_out[k * num_cells + idx] = f_in[k * num_cells + idx];
@@ -86,7 +87,7 @@ __global__ void k_stream_collide(
         return; 
     }
 
-    // Fluid cell processing
+    // Fluid cell processing - Streaming
     float rho = 0.0f;
     float ux = 0.0f;
     float uy = 0.0f;
@@ -96,18 +97,10 @@ __global__ void k_stream_collide(
         int nx = x - cx[k];
         int ny = y - cy[k];
         int nz = z - cz[k];
-
-        // Periodic boundaries for Y and Z (Wind tunnel walls are usually solid, but let's keep periodic for now or solid?)
-        // Let's make Y and Z periodic for now to simulate infinite domain, or solid walls?
-        // Task says "Wind Tunnel", usually walls are solid. But let's stick to simple periodic/inlet-outlet for now.
-        // Actually, let's make Y and Z periodic for simplicity in this phase, or clamp.
-        // Let's use periodic for Y and Z for now.
         
-        if (ny < 0) ny += height;
-        if (ny >= height) ny -= height;
-        
-        if (nz < 0) nz += depth;
-        if (nz >= depth) nz -= depth;
+        // Periodic wrap
+        ny = (ny + height) % height;
+        nz = (nz + depth) % depth;
 
         // Inlet/Outlet for X
         if (nx < 0) {
@@ -116,73 +109,173 @@ __global__ void k_stream_collide(
             float u_in_x = inlet_velocity;
             float u_in_y = 0.0f;
             float u_in_z = 0.0f;
-            float u_sq = u_in_x * u_in_x + u_in_y * u_in_y + u_in_z * u_in_z;
+            float u_sq = length_sq(vec3(u_in_x, u_in_y, u_in_z));
             float cu = cx[k] * u_in_x + cy[k] * u_in_y + cz[k] * u_in_z;
-            f_curr[k] = w[k] * r * (1.0f + 3.0f * cu + 4.5f * cu * cu - 1.5f * u_sq);
+            f[k] = w[k] * r * (1.0f + 3.0f * cu + 4.5f * cu * cu - 1.5f * u_sq);
         } else if (nx >= width) {
-            // Outlet: Copy from right ghost cell (simple extrapolation)
+            // Outlet: Copy from right ghost cell
             int safe_nx = width - 1;
             int n_idx = nz * width * height + ny * width + safe_nx;
-            f_curr[k] = f_in[k * num_cells + n_idx];
+            f[k] = f_in[k * num_cells + n_idx];
         } else {
             int n_idx = nz * width * height + ny * width + nx;
-
-            // Check if neighbor is solid
             if (solid[n_idx] > 0) {
                 int inv_k = inv_dir[k];
-                f_curr[k] = f_in[inv_k * num_cells + idx];
+                f[k] = f_in[inv_k * num_cells + idx];
             } else {
-                f_curr[k] = f_in[k * num_cells + n_idx];
+                f[k] = f_in[k * num_cells + n_idx];
             }
         }
 
-        rho += f_curr[k];
-        ux += f_curr[k] * cx[k];
-        uy += f_curr[k] * cy[k];
-        uz += f_curr[k] * cz[k];
+        rho += f[k];
+        ux += f[k] * cx[k];
+        uy += f[k] * cy[k];
+        uz += f[k] * cz[k];
     }
 
     // 2. Macroscopic moments
     if (rho > 0.0f) {
-        ux /= rho;
-        uy /= rho;
-        uz /= rho;
+        float inv_rho = 1.0f / rho;
+        ux *= inv_rho;
+        uy *= inv_rho;
+        uz *= inv_rho;
     }
 
     rho_out[idx] = rho;
-    u_out[idx] = make_float4(ux, uy, uz, 0.0f);
+    u_out[idx] = vec4(ux, uy, uz, 0.0f);
 
-    // 3. Collide (BGK)
-    float u_sq = ux * ux + uy * uy + uz * uz;
+    // 3. Cumulant Collision
     float omega = 1.0f / tau;
+    float omega_high = 1.0f;
 
+    // Pre-compute powers of velocity
+    float ux2 = ux * ux;
+    float uy2 = uy * uy;
+    float uz2 = uz * uz;
+    float uxuy = ux * uy;
+    float uyuz = uy * uz;
+    float uzux = uz * ux;
+
+    float f_axis_x = f[1] + f[2];
+    float f_axis_y = f[3] + f[4];
+    float f_axis_z = f[5] + f[6];
+    
+    float f_plane_xy = f[7] + f[8] + f[9] + f[10];
+    float f_plane_xz = f[11] + f[12] + f[13] + f[14];
+    float f_plane_yz = f[15] + f[16] + f[17] + f[18];
+
+    float m200 = f[1] + f[2] + f_plane_xy + f_plane_xz;
+    float m020 = f[3] + f[4] + f_plane_xy + f_plane_yz;
+    float m002 = f[5] + f[6] + f_plane_xz + f_plane_yz;
+    
+    float m110 = (f[7] + f[10]) - (f[8] + f[9]);
+    float m101 = (f[11] + f[14]) - (f[12] + f[13]);
+    float m011 = (f[15] + f[18]) - (f[16] + f[17]);
+
+    float tr = m200 + m020 + m002;
+
+    float k200 = m200 - rho * ux2;
+    float k020 = m020 - rho * uy2;
+    float k002 = m002 - rho * uz2;
+    float k110 = m110 - rho * uxuy;
+    float k101 = m101 - rho * uzux;
+    float k011 = m011 - rho * uyuz;
+
+    float k_xx_min_yy = k200 - k020;
+    float k_xx_min_zz = k200 - k002; // or use 3*k200 - tr ?
+    
+    float one_third_rho = rho * (1.0f/3.0f);
+    
+    k200 = k200 - omega * (k200 - one_third_rho);
+    k020 = k020 - omega * (k020 - one_third_rho);
+    k002 = k002 - omega * (k002 - one_third_rho);
+    k110 = k110 * (1.0f - omega);
+    k011 = k011 * (1.0f - omega);
+    k101 = k101 * (1.0f - omega);
+
+    m200 = k200 + rho * ux2;
+    m020 = k020 + rho * uy2;
+    m002 = k002 + rho * uz2;
+    m110 = k110 + rho * uxuy;
+    m011 = k011 + rho * uyuz;
+    m101 = k101 + rho * uzux;
+
+    float P_neq_xx = k200 - one_third_rho;
+    float P_neq_yy = k020 - one_third_rho;
+    float P_neq_zz = k002 - one_third_rho;
+    float P_neq_xy = k110;
+    float P_neq_yz = k011;
+    float P_neq_zx = k101;
+
+    // 4. Reconstruction
+    float u_sq = length_sq(vec3(ux, uy, uz));
+    
     for (int k = 0; k < 19; k++) {
         float cu = cx[k] * ux + cy[k] * uy + cz[k] * uz;
-        float f_eq = w[k] * rho * (1.0f + 3.0f * cu + 4.5f * cu * cu - 1.5f * u_sq);
         
-        f_out[k * num_cells + idx] = f_curr[k] * (1.0f - omega) + f_eq * omega;
+        float f_eq = w[k] * rho * (1.0f + 3.0f * cu + 4.5f * cu * cu - 1.5f * u_sq);
+
+        float Q_xx = (float)(cx[k] * cx[k]) - 1.0f/3.0f;
+        float Q_yy = (float)(cy[k] * cy[k]) - 1.0f/3.0f;
+        float Q_zz = (float)(cz[k] * cz[k]) - 1.0f/3.0f;
+        float Q_xy = (float)(cx[k] * cy[k]);
+        float Q_yz = (float)(cy[k] * cz[k]);
+        float Q_zx = (float)(cz[k] * cx[k]);
+
+        float f_neq = 4.5f * w[k] * (
+            Q_xx * P_neq_xx + Q_yy * P_neq_yy + Q_zz * P_neq_zz +
+            2.0f * (Q_xy * P_neq_xy + Q_yz * P_neq_yz + Q_zx * P_neq_zx)
+        );
+
+        f_out[k * num_cells + idx] = f_eq + f_neq;
     }
 }
 
-lbm_solver::lbm_solver(int width, int height, int depth) : width(width), height(height), depth(depth) {
-    num_cells = width * height * depth;
+lbm_solver::lbm_solver(int width, int height, int depth) : m_width(width), m_height(height), m_depth(depth) {
+    m_num_cells = width * height * depth;
     
-    d_f = cuda_buffer<float>(19 * num_cells);
-    d_f_new = cuda_buffer<float>(19 * num_cells);
-    d_rho = cuda_buffer<float>(num_cells);
-    d_u = cuda_buffer<float4>(num_cells);
-    d_curl = cuda_buffer<float>(num_cells);
-    d_solid = cuda_buffer<unsigned char>(num_cells);
+    d_f = cuda_buffer<float>(19 * m_num_cells);
+    d_f_new = cuda_buffer<float>(19 * m_num_cells);
+    d_rho = cuda_buffer<float>(m_num_cells);
+    d_u = cuda_buffer<vec4>(m_num_cells);
+    d_curl = cuda_buffer<float>(m_num_cells);
+    d_solid = cuda_buffer<unsigned char>(m_num_cells);
 
-    // Zero out solid mask initially
     d_solid.memset(0);
 
-    block_size = dim3(8, 8, 8); // 512 threads
-    grid_size = dim3(
-        (width + block_size.x - 1) / block_size.x, 
-        (height + block_size.y - 1) / block_size.y,
-        (depth + block_size.z - 1) / block_size.z
+    cudaDeviceProp prop;
+    int min_grid_size, optimal_block_size;
+#ifdef _DEBUG
+    CUDA_CHECK(cudaGetDeviceProperties(&prop, 0));
+    CUDA_CHECK(cudaOccupancyMaxPotentialBlockSize(&min_grid_size,
+                &optimal_block_size, k_stream_collide, 0, 0));
+
+    LOG_INFO("Optimal block size: {}", optimal_block_size);
+#else
+    cudaGetDeviceProperties(&prop, 0);
+    cudaOccupancyMaxPotentialBlockSize(&min_grid_size,
+            &optimal_block_size, k_stream_collide, 0, 0);
+#endif
+    int bx = 32;
+    int remaining = optimal_block_size / bx;
+    int by = floor(sqrt(static_cast<float>(remaining)));
+    int bz = remaining / by;
+
+    m_block_size = dim3(bx, by, bz);
+    m_grid_size = dim3(
+        (m_width + m_block_size.x - 1) / m_block_size.x, 
+        (m_height + m_block_size.y - 1) / m_block_size.y,
+        (m_depth + m_block_size.z - 1) / m_block_size.z
     );
+
+#ifdef _DEBUG
+    if (m_block_size.x * m_block_size.y > static_cast<unsigned int>(optimal_block_size))
+        LOG_ERROR("Block size exceeds optimal size; ajust accordingly.");
+
+    LOG_INFO("Block size: ({}, {}, {})", m_block_size.x, m_block_size.y, m_block_size.z);
+    LOG_INFO("Grid size: ({}, {}, {})", m_grid_size.x, m_grid_size.y, m_grid_size.z);
+    LOG_INFO("Threads per block: {}", m_block_size.x * m_block_size.y);
+#endif
 }
 
 lbm_solver::~lbm_solver() {
@@ -200,15 +293,18 @@ lbm_solver::~lbm_solver() {
 }
 
 void lbm_solver::init() {
-    k_init<<<grid_size, block_size>>>(d_f.get_data(), d_rho.get_data(), d_u.get_data(), width, height, depth);
+    k_init<<<m_grid_size, m_block_size>>>(d_f.get_data(), d_rho.get_data(), d_u.get_data(), m_width, m_height, m_depth);
 }
 
 void lbm_solver::step() {
-    k_stream_collide<<<grid_size, block_size>>>(d_f.get_data(), d_f_new.get_data(), d_rho.get_data(), d_u.get_data(), d_solid.get_data(), width, height, depth, tau, inlet_velocity);
+    k_stream_collide<<<m_grid_size, m_block_size>>>(d_f.get_data(), d_f_new.get_data(), d_rho.get_data(), d_u.get_data(), d_solid.get_data(), m_width, m_height, m_depth, m_settings.tau, m_settings.inlet_velocity);
 
     compute_curl();
 
     std::swap(d_f, d_f_new);
+#ifdef _DEBUG
+    cudaDeviceSynchronize();
+#endif
 }
 
 void lbm_solver::reset() {
@@ -233,7 +329,7 @@ __global__ void k_add_solid_rect(unsigned char* solid, int width, int height, in
 }
 
 void lbm_solver::add_solid(const Rect& rect) {
-    k_add_solid_rect<<<grid_size, block_size>>>(d_solid.get_data(), width, height, depth, rect.x, rect.y, rect.z, rect.w, rect.h, rect.d);
+    k_add_solid_rect<<<m_grid_size, m_block_size>>>(d_solid.get_data(), m_width, m_height, m_depth, rect.x, rect.y, rect.z, rect.w, rect.h, rect.d);
 }
 
 void lbm_solver::register_external_density(int fd, size_t size) {
@@ -256,7 +352,7 @@ void lbm_solver::register_external_density(int fd, size_t size) {
         throw std::runtime_error("Failed to map external memory to CUDA pointer");
     }
 
-    d_rho = cuda_buffer<float>(static_cast<float*>(mapped_ptr), num_cells, false);
+    d_rho = cuda_buffer<float>(static_cast<float*>(mapped_ptr), m_num_cells, false);
 }
 
 void lbm_solver::register_external_velocity(int fd, size_t size) {
@@ -279,10 +375,10 @@ void lbm_solver::register_external_velocity(int fd, size_t size) {
         throw std::runtime_error("Failed to map external velocity memory to CUDA pointer");
     }
 
-    d_u = cuda_buffer<float4>(static_cast<float4*>(mapped_ptr), num_cells, false);
+    d_u = cuda_buffer<vec4>(static_cast<vec4*>(mapped_ptr), m_num_cells, false);
 }
 
-__global__ void k_compute_curl(const float4* __restrict__ u, float* __restrict__ curl, int width, int height, int depth) {
+__global__ void k_compute_curl(const vec4* __restrict__ u, float* __restrict__ curl, int width, int height, int depth) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
     int z = blockIdx.z * blockDim.z + threadIdx.z;
@@ -291,33 +387,25 @@ __global__ void k_compute_curl(const float4* __restrict__ u, float* __restrict__
 
     int idx = z * width * height + y * width + x;
 
-    // 3D Curl = (dw/dy - dv/dz, du/dz - dw/dx, dv/dx - du/dy)
-    // For now, let's just compute magnitude of curl or a specific component?
-    // The previous 2D code computed scalar curl (z-component).
-    // Let's compute the magnitude of the curl vector.
-    
     // Helper to get velocity safely
-    auto get_u = [&](int ix, int iy, int iz) -> float4 {
+    auto get_u = [&](int ix, int iy, int iz) -> vec4 {
         ix = max(0, min(ix, width - 1));
         iy = max(0, min(iy, height - 1));
         iz = max(0, min(iz, depth - 1));
         return u[iz * width * height + iy * width + ix];
     };
 
-    float4 u_c = get_u(x, y, z);
+    vec4 u_c = get_u(x, y, z);
     
     // Central differences
-    float4 u_xp = get_u(x + 1, y, z);
-    float4 u_xm = get_u(x - 1, y, z);
-    float4 u_yp = get_u(x, y + 1, z);
-    float4 u_ym = get_u(x, y - 1, z);
-    float4 u_zp = get_u(x, y, z + 1);
-    float4 u_zm = get_u(x, y, z - 1);
+    vec4 u_xp = get_u(x + 1, y, z);
+    vec4 u_xm = get_u(x - 1, y, z);
+    vec4 u_yp = get_u(x, y + 1, z);
+    vec4 u_ym = get_u(x, y - 1, z);
+    vec4 u_zp = get_u(x, y, z + 1);
+    vec4 u_zm = get_u(x, y, z - 1);
 
     // Partial derivatives
-    // du/dx, du/dy, du/dz ...
-    // u.x = u, u.y = v, u.z = w
-    
     float dv_dx = (u_xp.y - u_xm.y) * 0.5f;
     float dw_dx = (u_xp.z - u_xm.z) * 0.5f;
     
@@ -331,11 +419,11 @@ __global__ void k_compute_curl(const float4* __restrict__ u, float* __restrict__
     float curl_y = du_dz - dw_dx;
     float curl_z = dv_dx - du_dy;
 
-    curl[idx] = sqrtf(curl_x * curl_x + curl_y * curl_y + curl_z * curl_z);
+    curl[idx] = length(vec3(curl_x, curl_y, curl_z));
 }
 
 void lbm_solver::compute_curl() {
-    k_compute_curl<<<grid_size, block_size>>>(d_u.get_data(), d_curl.get_data(), width, height, depth);
+    k_compute_curl<<<m_grid_size, m_block_size>>>(d_u.get_data(), d_curl.get_data(), m_width, m_height, m_depth);
 }
 
 void lbm_solver::register_external_curl(int fd, size_t size) {
@@ -358,7 +446,7 @@ void lbm_solver::register_external_curl(int fd, size_t size) {
         throw std::runtime_error("Failed to map external curl memory to CUDA pointer");
     }
 
-    d_curl = cuda_buffer<float>(static_cast<float*>(mapped_ptr), num_cells, false);
+    d_curl = cuda_buffer<float>(static_cast<float*>(mapped_ptr), m_num_cells, false);
 }
 
 void lbm_solver::register_external_solid(int fd, size_t size) {
@@ -381,5 +469,5 @@ void lbm_solver::register_external_solid(int fd, size_t size) {
         throw std::runtime_error("Failed to map external solid memory to CUDA pointer");
     }
 
-    d_solid = cuda_buffer<unsigned char>(static_cast<unsigned char*>(mapped_ptr), num_cells, false);
+    d_solid = cuda_buffer<unsigned char>(static_cast<unsigned char*>(mapped_ptr), m_num_cells, false);
 }

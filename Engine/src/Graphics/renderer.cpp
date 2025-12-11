@@ -22,7 +22,7 @@ renderer::renderer(uint32_t width, uint32_t height, uint32_t depth)
     : m_width(width), m_height(height), m_sim_width(width), m_sim_height(height), m_sim_depth(depth) {
     m_device = application::get_device();
 #ifdef _DEBUG
-    LOG_INFO("[Renderer] Initializing renderer with width: {} height: {} depth: {}", width, height, depth);
+    LOG_INFO("Initializing renderer with width: {} height: {} depth: {}", width, height, depth);
 #endif
     init_vulkan_resources();
 
@@ -70,9 +70,7 @@ renderer::~renderer() {
 
 void renderer::init_vulkan_resources() {
     // 1. Create Velocity Interop Buffer
-    // Size = width * height * depth * sizeof(float4) (Using float4 for alignment/simplicity in 3D)
-    // Size = width * height * depth * sizeof(float4) (Using float4 for alignment/simplicity in 3D)
-    size_t velocity_buffer_size = m_sim_width * m_sim_height * m_sim_depth * sizeof(float) * 4;
+    size_t velocity_buffer_size = m_sim_width * m_sim_height * m_sim_depth * sizeof(float4);
     VkBufferCreateInfo bufferInfo = {};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferInfo.size = velocity_buffer_size;
@@ -661,13 +659,8 @@ void renderer::update_sim_data() {
 
     check_vk_result(vkBeginCommandBuffer(m_transfer_command_buffer, &beginInfo));
 
-    // Transition Images to Transfer Dst
-    // Transition Images to Transfer Dst
-    VkImageMemoryBarrier barriers[3] = {};
+    VkImageMemoryBarrier barriers[2] = {};
     
-    // Density (Not used in this pass but kept for consistency if needed, or we can skip)
-    // We skip density for now as we are focusing on Velocity + Solid
-
     // Velocity
     barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barriers[0].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;

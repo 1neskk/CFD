@@ -9,7 +9,7 @@
 class cfd final : public layer {
 public:
     cfd() {
-        m_renderer = std::make_unique<renderer>(400, 400, 100);
+        m_renderer = std::make_unique<renderer>(400, 100, 100);
         m_solver = std::make_unique<lbm_solver>(400, 100, 100);
         
         m_solver->register_external_velocity(m_renderer->get_velocity_fd(), 400 * 100 * 100 * sizeof(float) * 4);
@@ -17,11 +17,12 @@ public:
         
         m_solver->init();
         
-        lbm_solver::Rect rect = {150, 40, 40, 20, 20, 20};
+        // pos, w, h, d;
+        lbm_solver::Rect rect = {150, 40, 40, 80, 20, 20};
         m_solver->add_solid(rect);
 
 #ifdef _DEBUG
-        LOG_INFO("[CFD] CFD Layer initialized");
+        LOG_INFO("CFD Layer initialized");
 #endif
     }
 
@@ -36,7 +37,7 @@ public:
         
         style::theme();
 
-        ImGui::Begin("Settings");
+        ImGui::Begin("Renderer Settings");
         ImGui::Text("Last Render Time: %.3fms", m_last_render_time);
         ImGui::Text("App Frame Time: %.3fms (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
         
@@ -44,6 +45,11 @@ public:
         if (ImGui::Checkbox("VSync", &vsync)) {
             application::get().toggle_vsync();
         }
+        ImGui::End();
+
+        ImGui::Begin("CFD Settings");
+        ImGui::SliderFloat("tau", &m_solver->get_settings().tau, 0.1f, 1.0f);
+        ImGui::SliderFloat("inlet velocity", &m_solver->get_settings().inlet_velocity, 0.0f, 1.0f);
         ImGui::End();
 
         ImGui::Begin("Viewport", nullptr,

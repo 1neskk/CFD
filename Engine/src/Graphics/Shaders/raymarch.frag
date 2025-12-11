@@ -29,8 +29,6 @@ vec3 turbo(float t) {
     return c0 + t * (c1 + t * (c2 + t * (c3 + t * (c4 + t * (c5 + t * (c6 + t * c7))))));
 }
 
-// Ray-Box Intersection
-// Returns (tNear, tFar)
 vec2 intersectBox(vec3 ro, vec3 rd, vec3 boxMin, vec3 boxMax) {
     vec3 tMin = (boxMin - ro) / rd;
     vec3 tMax = (boxMax - ro) / rd;
