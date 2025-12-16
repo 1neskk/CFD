@@ -6,5 +6,8 @@
 *.fatbin
 *.spv
 *.ini
+*.ncu-rep
+*.nsys-rep
+*.sqlite
 .vscode
 build/

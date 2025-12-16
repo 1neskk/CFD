@@ -10,11 +10,14 @@
 struct device_camera {
     alignas(16) glm::vec3 position;
     alignas(16) glm::vec3 direction;
-    uint32_t width;
+    alignas(16) uint32_t width;
     uint32_t height;
 
     alignas(16) glm::mat4 inverse_view;
     alignas(16) glm::mat4 inverse_projection;
+    alignas(16) glm::mat4 view;
+    alignas(16) glm::mat4 projection;
+    alignas(16) glm::vec3 sim_dimensions;
 };
 
 class camera {

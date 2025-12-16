@@ -3,10 +3,14 @@
 #include <cuda_runtime.h>
 #include "cuda_buffer.cuh"
 #include "cuda_math.cuh"
+#include "Utils/mesh_voxelizer.h"
 
 struct settings {
-    float tau = 0.50001f;
-    float inlet_velocity = 0.05f;
+    float tau = 0.55f;
+    float inlet_velocity = 0.08f;
+    float omega_shear = 1.98f;
+    float omega_bulk = 1.90f;
+    //float omega_high = 1.99f;
 };
 
 class lbm_solver {
@@ -28,6 +32,8 @@ public:
     void register_external_velocity(int fd, size_t size);
     void register_external_curl(int fd, size_t size);
     void register_external_solid(int fd, size_t size);
+
+    void load_mesh(const std::string& path);
 
     // Getters for visualization/interop
     __host__ __device__ cuda_buffer<float>& get_density() { return d_rho; }
@@ -63,4 +69,6 @@ private:
     cudaExternalMemory_t m_external_solid = nullptr;
 
     cuda_buffer<float> d_curl;
+
+    MeshVoxelizer* m_voxelizer;
 };

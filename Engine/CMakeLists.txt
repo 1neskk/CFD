@@ -3,6 +3,7 @@ project(Engine CUDA CXX)
 
 include(FetchContent)
 find_package(Vulkan REQUIRED)
+find_package(OpenMP)
 
 if(CMAKE_BUILD_TYPE STREQUAL "Test")
     FetchContent_Declare(
@@ -22,6 +23,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/imgui/backends)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/glfw/include)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/stb)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/spdlog/include)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/tinyobjloader)
 
 include_directories(${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
 include_directories(${Vulkan_INCLUDE_DIRS})
@@ -33,6 +35,7 @@ file(GLOB ENGINE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Physics/*.cu
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Graphics/*.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Graphics/*.cu
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Utils/*.cpp
 )
 
 file(GLOB ENGINE_HEADERS 
@@ -40,6 +43,7 @@ file(GLOB ENGINE_HEADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Physics/*.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Physics/*.cuh
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Graphics/*.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Utils/*.h
 )
 
 add_executable(${PROJECT_NAME}
@@ -56,6 +60,10 @@ target_link_libraries(${PROJECT_NAME}
     ${CUDA_LIBRARIES}
     ${Vulkan_LIBRARIES}
 )
+
+if (OpenMP_CXX_FOUND)
+    target_link_libraries(${PROJECT_NAME} OpenMP::OpenMP_CXX)
+endif()
 
 set(CMAKE_CONFIGURATION_TYPES "Debug;Release;Relwithdebinfo" CACHE STRING "" FORCE)
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")

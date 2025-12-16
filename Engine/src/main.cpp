@@ -9,17 +9,19 @@
 class cfd final : public layer {
 public:
     cfd() {
-        m_renderer = std::make_unique<renderer>(400, 100, 100);
-        m_solver = std::make_unique<lbm_solver>(400, 100, 100);
+        uint32_t width = 400;
+        uint32_t height = 100;
+        uint32_t depth = 100;
         
-        m_solver->register_external_velocity(m_renderer->get_velocity_fd(), 400 * 100 * 100 * sizeof(float) * 4);
-        m_solver->register_external_solid(m_renderer->get_solid_fd(), 400 * 100 * 100 * sizeof(uint8_t));
+        m_renderer = std::make_unique<renderer>(width, height, depth);
+        m_solver = std::make_unique<lbm_solver>(width, height, depth);
+        
+        m_solver->register_external_velocity(m_renderer->get_velocity_fd(), width * height * depth * sizeof(float) * 4);
+        m_solver->register_external_solid(m_renderer->get_solid_fd(), width * height * depth * sizeof(uint8_t));
         
         m_solver->init();
-        
-        // pos, w, h, d;
-        lbm_solver::Rect rect = {150, 40, 40, 80, 20, 20};
-        m_solver->add_solid(rect);
+        m_solver->load_mesh("assets/mcl35m_2.obj");
+        //m_solver->load_mesh("assets/cube.obj");
 
 #ifdef _DEBUG
         LOG_INFO("CFD Layer initialized");
@@ -47,9 +49,15 @@ public:
         }
         ImGui::End();
 
-        ImGui::Begin("CFD Settings");
-        ImGui::SliderFloat("tau", &m_solver->get_settings().tau, 0.1f, 1.0f);
-        ImGui::SliderFloat("inlet velocity", &m_solver->get_settings().inlet_velocity, 0.0f, 1.0f);
+        ImGui::Begin("Sim Settings");
+        ImGui::DragFloat("tau", &m_solver->get_settings().tau, 0.1f, 1.0f);
+        ImGui::DragFloat("inlet velocity", &m_solver->get_settings().inlet_velocity, 0.0f, 2.0f);
+        ImGui::DragFloat("omega shear", &m_solver->get_settings().omega_shear, 0.0f, 5.0f);
+        ImGui::DragFloat("omega_bulk", &m_solver->get_settings().omega_bulk, 0.0f, 5.0f);
+        
+        if (ImGui::Button("Restart Simulation")) {
+            m_solver->reset();
+        }
         ImGui::End();
 
         ImGui::Begin("Viewport", nullptr,
@@ -77,6 +85,7 @@ public:
     void render() {
         timer timer;
         m_renderer->resize(m_viewport_width, m_viewport_height);
+        m_renderer->compute_streamlines();
         m_renderer->render();
         m_last_render_time = timer.elapsed_ms();
     }

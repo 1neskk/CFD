@@ -1,0 +1,62 @@
+#version 450
+
+layout(local_size_x = 256) in;
+
+layout(binding = 0) uniform sampler3D velocityTexture;
+
+struct Vertex {
+    vec4 pos;
+};
+
+layout(std430, binding = 1) buffer VertexBuffer {
+    Vertex vertices[];
+};
+
+layout(push_constant) uniform PushConstants {
+    uint numSeeds;
+    uint numSteps;
+    float stepSize;
+    float seedY;
+} push;
+
+// Random number generation
+uint hash(uint x) {
+    x += (x << 10u);
+    x ^= (x >> 6u);
+    x += (x << 3u);
+    x ^= (x >> 11u);
+    x += (x << 15u);
+    return x;
+}
+
+float random(uint seed) {
+    return float(hash(seed)) / 4294967295.0;
+}
+
+void main() {
+    uint id = gl_GlobalInvocationID.x;
+    if (id >= push.numSeeds) return;
+
+    float rx = random(id * 3 + 0);
+    float ry = random(id * 3 + 1);
+    float rz = random(id * 3 + 2);
+    
+    vec3 pos = vec3(rx, ry, rz);
+    
+    for (uint i = 0; i < push.numSteps; i++) {
+        vec4 vel = texture(velocityTexture, pos);
+        float speed = length(vel.xyz);
+        
+        uint idx = id * push.numSteps + i;
+        vertices[idx].pos = vec4(pos, speed);
+        
+        if (speed > 0.0001) {
+            pos += normalize(vel.xyz) * push.stepSize;
+        }
+        
+        // Boundary check
+        if (pos.x < 0.0 || pos.x > 1.0 || pos.y < 0.0 || pos.y > 1.0 || pos.z < 0.0 || pos.z > 1.0) {
+            pos = clamp(pos, 0.0, 1.0);
+        }
+    }
+}

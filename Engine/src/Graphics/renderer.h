@@ -9,6 +9,20 @@
 #include "vk_cuda_semaphore.h"
 #include "camera.h"
 
+struct VectorPushConstants {
+    uint32_t gridX;
+    uint32_t gridY;
+    uint32_t gridZ;
+    float scale;
+};
+
+struct StreamlinePushConstants {
+    uint32_t numSeeds;
+    uint32_t numSteps;
+    float stepSize;
+    float seedY;
+};
+
 class renderer {
 public:
     renderer(uint32_t width, uint32_t height, uint32_t depth);
@@ -17,6 +31,7 @@ public:
     void update_sim_data();
     void update_camera(float dt);
     void render();
+    void compute_streamlines();
     
     std::shared_ptr<image> get_output_image() const { return m_output_image; }
     void resize(uint32_t width, uint32_t height);
@@ -65,14 +80,34 @@ private:
     void* m_camera_mapped_memory = nullptr;
     size_t m_camera_buffer_size = 0;
 
+    // Vector Resources
+    VkBuffer m_vector_vertex_buffer = VK_NULL_HANDLE;
+    VkDeviceMemory m_vector_vertex_memory = VK_NULL_HANDLE;
+    uint32_t m_vector_vertex_count = 0;
+
+    // Streamline Resources
+    VkBuffer m_streamline_vertex_buffer = VK_NULL_HANDLE;
+    VkDeviceMemory m_streamline_vertex_memory = VK_NULL_HANDLE;
+    uint32_t m_streamline_vertex_count = 0;
+    
     std::shared_ptr<image> m_output_image;
+    
+    VkImage m_depth_image = VK_NULL_HANDLE;
+    VkDeviceMemory m_depth_image_memory = VK_NULL_HANDLE;
+    VkImageView m_depth_image_view = VK_NULL_HANDLE;
 
     // Pipeline
     VkRenderPass m_render_pass = VK_NULL_HANDLE;
     VkDescriptorSetLayout m_descriptor_set_layout = VK_NULL_HANDLE;
     VkPipelineLayout m_pipeline_layout = VK_NULL_HANDLE;
     VkPipeline m_background_pipeline = VK_NULL_HANDLE;
-    VkPipeline m_streamlines_pipeline = VK_NULL_HANDLE;
+    VkPipeline m_vector_pipeline = VK_NULL_HANDLE;
+    VkPipeline m_streamline_graphics_pipeline = VK_NULL_HANDLE;
+    VkPipeline m_streamline_compute_pipeline = VK_NULL_HANDLE;
+    VkPipelineLayout m_streamline_compute_layout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout m_streamline_compute_descriptor_layout = VK_NULL_HANDLE;
+    VkDescriptorPool m_streamline_descriptor_pool = VK_NULL_HANDLE;
+    std::vector<VkDescriptorSet> m_streamline_descriptor_sets;
     VkDescriptorPool m_descriptor_pool = VK_NULL_HANDLE;
     std::vector<VkDescriptorSet> m_descriptor_sets;
 

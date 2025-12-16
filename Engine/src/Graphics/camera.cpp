@@ -148,6 +148,8 @@ void camera::allocate_device_resources(device_camera& device_camera) const {
     device_camera.height = m_height;
     device_camera.inverse_view = m_inverse_view;
     device_camera.inverse_projection = m_inverse_projection;
+    device_camera.view = m_view;
+    device_camera.projection = m_projection;
 }
 
 void camera::free_device_resources(device_camera& /*device_camera*/) {

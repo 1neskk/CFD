@@ -1,14 +1,18 @@
 .PHONY: all build debug relwithdebinfo clean format help
 all: build
 
-build:
+build: shaders
 	mkdir -p build
 	echo "Building project in Release mode..."
 	cd build && \
 	cmake -DCMAKE_BUILD_TYPE=Release .. && \
 	make
 
-debug:
+shaders:
+	echo "Compiling shaders..."
+	find Engine/src/Graphics/Shaders -name "*.vert" -o -name "*.frag" -o -name "*.comp" | xargs -I{} glslc {} -o {}.spv
+
+debug: shaders
 	mkdir -p build
 	echo "Building project in Debug mode..."
 	cd build && \
