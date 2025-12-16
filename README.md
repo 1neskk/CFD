@@ -79,4 +79,4 @@ After building, the executable will be located in the `build` directory.
 
 ## License
 
-This project is licensed under the MIT License.
+This project is licensed under the Apache-2.0 License.
