@@ -31,7 +31,7 @@ clean:
 
 format:
 	echo "Formatting code..."
-	clang-format Core/src/*.h Core/src/*.cu Core/src/*.cpp Engine/src/Physics/*.h Engine/src/Physics/*.cpp Engine/src/Physics/*.cu Engine/src/Graphics/*.h Engine/src/Graphics/*.cpp Engine/src/Graphics/*.cu -i --style=file
+	clang-format Core/src/*.h Core/src/*.cu Core/src/*.cpp Engine/src/*.cpp Engine/src/Physics/*.cuh Engine/src/Physics/*.cu Engine/src/Graphics/*.h Engine/src/Graphics/*.cpp Engine/src/Utils/*.h Engine/src/Utils/*.cpp -i --style=file
 
 help:
 	@echo "Available targets:"

@@ -7,21 +7,25 @@
 #include "Physics/lbm_solver.cuh"
 
 class cfd final : public layer {
-public:
+   public:
     cfd() {
         uint32_t width = 400;
         uint32_t height = 100;
         uint32_t depth = 100;
-        
+
         m_renderer = std::make_unique<renderer>(width, height, depth);
         m_solver = std::make_unique<lbm_solver>(width, height, depth);
-        
-        m_solver->register_external_velocity(m_renderer->get_velocity_fd(), width * height * depth * sizeof(float) * 4);
-        m_solver->register_external_solid(m_renderer->get_solid_fd(), width * height * depth * sizeof(uint8_t));
-        
+
+        m_solver->register_external_velocity(
+            m_renderer->get_velocity_fd(),
+            width * height * depth * sizeof(float) * 4);
+        m_solver->register_external_solid(
+            m_renderer->get_solid_fd(),
+            width * height * depth * sizeof(uint8_t));
+
         m_solver->init();
         m_solver->load_mesh("assets/mcl35m_2.obj");
-        //m_solver->load_mesh("assets/cube.obj");
+        // m_solver->load_mesh("assets/cube.obj");
 
 #ifdef _DEBUG
         LOG_INFO("CFD Layer initialized");
@@ -36,13 +40,14 @@ public:
 
     virtual void on_render() override {
         const auto& io = ImGui::GetIO();
-        
+
         style::theme();
 
         ImGui::Begin("Renderer Settings");
         ImGui::Text("Last Render Time: %.3fms", m_last_render_time);
-        ImGui::Text("App Frame Time: %.3fms (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
-        
+        ImGui::Text("App Frame Time: %.3fms (%.1f FPS)", 1000.0f / io.Framerate,
+                    io.Framerate);
+
         bool vsync = application::get().is_vsync_enabled();
         if (ImGui::Checkbox("VSync", &vsync)) {
             application::get().toggle_vsync();
@@ -51,32 +56,35 @@ public:
 
         ImGui::Begin("Sim Settings");
         ImGui::DragFloat("tau", &m_solver->get_settings().tau, 0.1f, 1.0f);
-        ImGui::DragFloat("inlet velocity", &m_solver->get_settings().inlet_velocity, 0.0f, 2.0f);
-        ImGui::DragFloat("omega shear", &m_solver->get_settings().omega_shear, 0.0f, 5.0f);
-        ImGui::DragFloat("omega_bulk", &m_solver->get_settings().omega_bulk, 0.0f, 5.0f);
-        
+        ImGui::DragFloat("inlet velocity",
+                         &m_solver->get_settings().inlet_velocity, 0.0f, 2.0f);
+        ImGui::DragFloat("omega shear", &m_solver->get_settings().omega_shear,
+                         0.0f, 5.0f);
+        ImGui::DragFloat("omega_bulk", &m_solver->get_settings().omega_bulk,
+                         0.0f, 5.0f);
+
         if (ImGui::Button("Restart Simulation")) {
             m_solver->reset();
         }
         ImGui::End();
 
         ImGui::Begin("Viewport", nullptr,
-                    ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
-                    ImGuiWindowFlags_NoTitleBar |
-                    ImGuiWindowFlags_NoScrollbar);
-        
+                     ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
+                         ImGuiWindowFlags_NoTitleBar |
+                         ImGuiWindowFlags_NoScrollbar);
+
         ImVec2 viewport_panel_size = ImGui::GetContentRegionAvail();
         m_viewport_width = viewport_panel_size.x;
         m_viewport_height = viewport_panel_size.y;
 
         auto image = m_renderer->get_output_image();
         if (image) {
-            ImGui::Image(image->get_descriptor_set(), 
+            ImGui::Image(image->get_descriptor_set(),
                          {static_cast<float>(image->get_width()),
                           static_cast<float>(image->get_height())},
-                          ImVec2(0, 1), ImVec2(1, 0));
+                         ImVec2(0, 1), ImVec2(1, 0));
         }
-        
+
         ImGui::End();
 
         render();
@@ -90,7 +98,7 @@ public:
         m_last_render_time = timer.elapsed_ms();
     }
 
-private:
+   private:
     std::unique_ptr<lbm_solver> m_solver;
     std::unique_ptr<renderer> m_renderer;
 

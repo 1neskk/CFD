@@ -1,24 +1,25 @@
 #include "mesh_voxelizer.h"
+
 #include "logger.h"
 
 #define TINYOBJLOADER_IMPLEMENTATION
-#include "tiny_obj_loader.h"
-
-#include <iostream>
 #include <algorithm>
+#include <iostream>
 #include <limits>
+
+#include "tiny_obj_loader.h"
 
 constexpr auto EPSILON = 0.0000001f;
 
-MeshVoxelizer::MeshVoxelizer() : m_min_bound(std::numeric_limits<float>::max()), m_max_bound(std::numeric_limits<float>::lowest()) {
-}
+MeshVoxelizer::MeshVoxelizer()
+    : m_min_bound(std::numeric_limits<float>::max()),
+      m_max_bound(std::numeric_limits<float>::lowest()) {}
 
-MeshVoxelizer::~MeshVoxelizer() {
-}
+MeshVoxelizer::~MeshVoxelizer() {}
 
 bool MeshVoxelizer::load_obj(const std::string& path) {
     tinyobj::ObjReaderConfig reader_config;
-    reader_config.mtl_search_path = "./assets/"; 
+    reader_config.mtl_search_path = "./assets/";
 
     tinyobj::ObjReader reader;
 
@@ -55,7 +56,7 @@ bool MeshVoxelizer::load_obj(const std::string& path) {
             Triangle tri;
             for (size_t v = 0; v < fv; v++) {
                 tinyobj::index_t idx = shapes[s].mesh.indices[index_offset + v];
-                
+
                 float vx = attrib.vertices[3 * size_t(idx.vertex_index) + 0];
                 float vy = attrib.vertices[3 * size_t(idx.vertex_index) + 1];
                 float vz = attrib.vertices[3 * size_t(idx.vertex_index) + 2];
@@ -75,17 +76,18 @@ bool MeshVoxelizer::load_obj(const std::string& path) {
     }
 
 #ifdef _DEBUG
-    LOG_INFO("Loaded mesh with {} triangles. Bounds: [{}, {}, {}] to [{}, {}, {}]", 
+    LOG_INFO(
+        "Loaded mesh with {} triangles. Bounds: [{}, {}, {}] to [{}, {}, {}]",
 #endif
-        m_triangles.size(), 
-        m_min_bound.x, m_min_bound.y, m_min_bound.z,
+        m_triangles.size(), m_min_bound.x, m_min_bound.y, m_min_bound.z,
         m_max_bound.x, m_max_bound.y, m_max_bound.z);
 
     return true;
 }
 
 // Moller-Trumbore intersection algorithm
-bool MeshVoxelizer::ray_triangle_intersect(const glm::vec3& ray_origin, const glm::vec3& ray_dir, 
+bool MeshVoxelizer::ray_triangle_intersect(const glm::vec3& ray_origin,
+                                           const glm::vec3& ray_dir,
                                            const Triangle& tri, float& t) {
     glm::vec3 edge1, edge2, h, s, q;
     float a, f, u, v;
@@ -96,29 +98,24 @@ bool MeshVoxelizer::ray_triangle_intersect(const glm::vec3& ray_origin, const gl
     a = glm::dot(edge1, h);
 
     if (a > -EPSILON && a < EPSILON)
-        return false;    // This ray is parallel to this triangle.
+        return false;  // This ray is parallel to this triangle.
 
     f = 1.0f / a;
     s = ray_origin - tri.v0;
     u = f * glm::dot(s, h);
 
-    if (u < 0.0f || u > 1.0f)
-        return false;
+    if (u < 0.0f || u > 1.0f) return false;
 
     q = glm::cross(s, edge1);
     v = f * glm::dot(ray_dir, q);
 
-    if (v < 0.0f || u + v > 1.0f)
-        return false;
+    if (v < 0.0f || u + v > 1.0f) return false;
 
     t = f * glm::dot(edge2, q);
 
-    if (t > EPSILON)
-    {
+    if (t > EPSILON) {
         return true;
-    }
-    else
-    {
+    } else {
         return false;
     }
 }
@@ -146,17 +143,20 @@ bool MeshVoxelizer::is_inside(const glm::vec3& point) {
     return (intersections % 2) != 0;
 }
 
-void MeshVoxelizer::voxelize(unsigned char* buffer, int width, int height, int depth, float scale) {
+void MeshVoxelizer::voxelize(unsigned char* buffer, int width, int height,
+                             int depth, float scale) {
     glm::vec3 grid_center(width / 2.0f, height / 2.0f, depth / 2.0f);
 
     glm::vec3 mesh_center;
     mesh_center.x = (m_min_bound.x + m_max_bound.x) / 2;
     mesh_center.y = m_min_bound.y + grid_center.y / scale;
     mesh_center.z = (m_min_bound.z + m_max_bound.z) / 2;
-    
-    LOG_INFO("Voxelizing mesh. Mesh Center: [{}, {}, {}] -> Grid Center: [{}, {}, {}], Scale: {}", 
-        mesh_center.x, mesh_center.y, mesh_center.z,
-        grid_center.x, grid_center.y, grid_center.z, scale);
+
+    LOG_INFO(
+        "Voxelizing mesh. Mesh Center: [{}, {}, {}] -> Grid Center: [{}, {}, "
+        "{}], Scale: {}",
+        mesh_center.x, mesh_center.y, mesh_center.z, grid_center.x,
+        grid_center.y, grid_center.z, scale);
 
     // Precompute triangle bounds for fast culling
     struct TriBounds {
@@ -171,24 +171,28 @@ void MeshVoxelizer::voxelize(unsigned char* buffer, int width, int height, int d
         tri_bounds[i].max_z = std::max({tri.v0.z, tri.v1.z, tri.v2.z});
     }
 
-    #pragma omp parallel for collapse(2)
+#pragma omp parallel for collapse(2)
     for (int z = 0; z < depth; z++) {
         for (int y = 0; y < height; y++) {
             glm::vec3 grid_start(0, y, z);
-            glm::vec3 ray_origin_mesh = (grid_start - grid_center) / scale + mesh_center;
+            glm::vec3 ray_origin_mesh =
+                (grid_start - grid_center) / scale + mesh_center;
             glm::vec3 ray_dir(1.0f, 0.0f, 0.0f);
 
             std::vector<float> intersections;
-            intersections.reserve(16); // Heuristic reserve
+            intersections.reserve(16);  // Heuristic reserve
 
             for (size_t i = 0; i < m_triangles.size(); ++i) {
-                if (ray_origin_mesh.y < tri_bounds[i].min_y || ray_origin_mesh.y > tri_bounds[i].max_y ||
-                    ray_origin_mesh.z < tri_bounds[i].min_z || ray_origin_mesh.z > tri_bounds[i].max_z) {
+                if (ray_origin_mesh.y < tri_bounds[i].min_y ||
+                    ray_origin_mesh.y > tri_bounds[i].max_y ||
+                    ray_origin_mesh.z < tri_bounds[i].min_z ||
+                    ray_origin_mesh.z > tri_bounds[i].max_z) {
                     continue;
                 }
 
                 float t;
-                if (ray_triangle_intersect(ray_origin_mesh, ray_dir, m_triangles[i], t)) {
+                if (ray_triangle_intersect(ray_origin_mesh, ray_dir,
+                                           m_triangles[i], t)) {
                     intersections.push_back(t);
                 }
             }
@@ -197,14 +201,14 @@ void MeshVoxelizer::voxelize(unsigned char* buffer, int width, int height, int d
 
             for (size_t i = 0; i + 1 < intersections.size(); i += 2) {
                 float t_enter = intersections[i];
-                float t_exit = intersections[i+1];
+                float t_exit = intersections[i + 1];
 
                 int x_start = std::max(0, (int)ceil(t_enter * scale));
                 int x_end = std::min(width, (int)floor(t_exit * scale));
 
                 for (int x = x_start; x < x_end; x++) {
-                     int idx = z * width * height + y * width + x;
-                     buffer[idx] = 255;
+                    int idx = z * width * height + y * width + x;
+                    buffer[idx] = 255;
                 }
             }
         }

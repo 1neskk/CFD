@@ -1,11 +1,11 @@
 #include "application.h"
-#include "logger.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_vulkan.h"
+#include "logger.h"
 #define GLFW_INCLUDE_NONE
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -51,10 +51,10 @@ void check_vk_result(VkResult result) {
 }
 
 #ifdef IMGUI_VULKAN_DEBUG_REPORT
-static VKAPI_ATTR VkBool32 VKAPI_CALL
-debug_report(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objectType,
-             uint64_t object, size_t location, int32_t messageCode,
-             const char *p_layer_prefix, const char *pMessage, void *pUserData) {
+static VKAPI_ATTR VkBool32 VKAPI_CALL debug_report(
+    VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objectType,
+    uint64_t object, size_t location, int32_t messageCode,
+    const char *p_layer_prefix, const char *pMessage, void *pUserData) {
     (void)flags;
     (void)object;
     (void)location;
@@ -68,14 +68,14 @@ debug_report(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objectType,
 }
 #endif  // IMGUI_VULKAN_DEBUG_REPORT
 
-static bool check_validation_layer_support(const char* layerName) {
+static bool check_validation_layer_support(const char *layerName) {
     uint32_t layerCount;
     vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
 
     std::vector<VkLayerProperties> availableLayers(layerCount);
     vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
 
-    for (const auto& layerProperties : availableLayers) {
+    for (const auto &layerProperties : availableLayers) {
         if (strcmp(layerName, layerProperties.layerName) == 0) {
             return true;
         }
@@ -94,14 +94,18 @@ static void setup_vulkan(const char **extensions, uint32_t extensions_count) {
         create_info.ppEnabledExtensionNames = extensions;
 #ifdef IMGUI_VULKAN_DEBUG_REPORT
         const char *validationLayer = "VK_LAYER_KHRONOS_validation";
-        bool validationLayerPresent = check_validation_layer_support(validationLayer);
-        
+        bool validationLayerPresent =
+            check_validation_layer_support(validationLayer);
+
         if (validationLayerPresent) {
             const char *layers[] = {validationLayer};
             create_info.enabledLayerCount = 1;
             create_info.ppEnabledLayerNames = layers;
         } else {
-            fprintf(stderr, "[vulkan] Validation layer %s not present, disabling validation.\n", validationLayer);
+            fprintf(stderr,
+                    "[vulkan] Validation layer %s not present, disabling "
+                    "validation.\n",
+                    validationLayer);
             create_info.enabledLayerCount = 0;
         }
 
@@ -123,10 +127,11 @@ static void setup_vulkan(const char **extensions, uint32_t extensions_count) {
         check_vk_result(err);
         free(extensions_ext);
 
-        // Only create debug report callback if validation layer is present (usually they go together)
-        // actually VK_EXT_debug_report is an extension, not a layer. 
-        // But usually we only want it if we are debugging.
-        
+        // Only create debug report callback if validation layer is present
+        // (usually they go together) actually VK_EXT_debug_report is an
+        // extension, not a layer. But usually we only want it if we are
+        // debugging.
+
         auto vkCreateDebugReportCallbackEXT =
             (PFN_vkCreateDebugReportCallbackEXT)vkGetInstanceProcAddr(
                 g_Instance, "vkCreateDebugReportCallbackEXT");
@@ -142,7 +147,7 @@ static void setup_vulkan(const char **extensions, uint32_t extensions_count) {
             debug_report_ci.pfnCallback = debug_report;
             debug_report_ci.pUserData = nullptr;
             err = vkCreateDebugReportCallbackEXT(g_Instance, &debug_report_ci,
-                                                g_allocator, &g_DebugReport);
+                                                 g_allocator, &g_DebugReport);
             check_vk_result(err);
         }
 #else
@@ -261,8 +266,8 @@ static void setup_vulkan(const char **extensions, uint32_t extensions_count) {
 }
 
 static void setup_vulkan_window(ImGui_ImplVulkanH_Window *wd,
-                              VkSurfaceKHR surface, int width, int height,
-                              bool vsyncEnabled) {
+                                VkSurfaceKHR surface, int width, int height,
+                                bool vsyncEnabled) {
     wd->Surface = surface;
 
     VkBool32 res;
@@ -392,15 +397,17 @@ void frame_render(ImGui_ImplVulkanH_Window *wd, ImDrawData *draw_data) {
     {
         VkPipelineStageFlags wait_stage =
             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        
+
         std::vector<VkSemaphore> wait_semaphores;
         wait_semaphores.push_back(image_acquired_semaphore);
-        
+
         std::vector<VkPipelineStageFlags> wait_stages;
         wait_stages.push_back(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
 
         if (s_instance) {
-            wait_semaphores.insert(wait_semaphores.end(), s_instance->m_wait_semaphores.begin(), s_instance->m_wait_semaphores.end());
+            wait_semaphores.insert(wait_semaphores.end(),
+                                   s_instance->m_wait_semaphores.begin(),
+                                   s_instance->m_wait_semaphores.end());
             for (size_t i = 0; i < s_instance->m_wait_semaphores.size(); ++i) {
                 wait_stages.push_back(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
             }
@@ -582,7 +589,7 @@ void application::init() {
         err = vkBeginCommandBuffer(command_buffer, &begin_info);
         check_vk_result(err);
 
-        //ImGui_ImplVulkan_CreateFontsTexture();
+        // ImGui_ImplVulkan_CreateFontsTexture();
 
         VkSubmitInfo end_info = {};
         end_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -645,7 +652,7 @@ void application::run() {
                 // g_PhysicalDevice, g_Device, &g_MainWindowData, g_QueueFamily,
                 // g_allocator, width, height, g_MinImageCount);
                 setup_vulkan_window(&g_MainWindowData, g_MainWindowData.Surface,
-                                  width, height, m_vsync_enabled);
+                                    width, height, m_vsync_enabled);
                 g_MainWindowData.FrameIndex = 0;
 
                 s_AllocatedCommandBuffers.clear();
@@ -696,20 +703,35 @@ void application::run() {
                     first_time = false;
 
                     if (ImGui::DockBuilderGetNode(dockspace_id) == NULL) {
-                        ImGui::DockBuilderRemoveNode(dockspace_id); // Clear out existing layout
-                        ImGui::DockBuilderAddNode(dockspace_id, ImGuiDockNodeFlags_DockSpace); // Add empty node
-                        ImGui::DockBuilderSetNodeSize(dockspace_id, viewport->Size);
+                        ImGui::DockBuilderRemoveNode(
+                            dockspace_id);  // Clear out existing layout
+                        ImGui::DockBuilderAddNode(
+                            dockspace_id,
+                            ImGuiDockNodeFlags_DockSpace);  // Add empty node
+                        ImGui::DockBuilderSetNodeSize(dockspace_id,
+                                                      viewport->Size);
 
                         ImGuiID dock_main_id = dockspace_id;
-                        ImGuiID dock_id_left = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Left, 0.20f, nullptr, &dock_main_id);
-                        ImGuiID dock_id_right = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Right, 0.25f, nullptr, &dock_main_id);
-                        ImGuiID dock_id_right_down = ImGui::DockBuilderSplitNode(dock_id_right, ImGuiDir_Down, 0.50f, nullptr, &dock_id_right);
+                        ImGuiID dock_id_left = ImGui::DockBuilderSplitNode(
+                            dock_main_id, ImGuiDir_Left, 0.20f, nullptr,
+                            &dock_main_id);
+                        ImGuiID dock_id_right = ImGui::DockBuilderSplitNode(
+                            dock_main_id, ImGuiDir_Right, 0.25f, nullptr,
+                            &dock_main_id);
+                        ImGuiID dock_id_right_down =
+                            ImGui::DockBuilderSplitNode(
+                                dock_id_right, ImGuiDir_Down, 0.50f, nullptr,
+                                &dock_id_right);
 
                         ImGui::DockBuilderDockWindow("Hierarchy", dock_id_left);
-                        ImGui::DockBuilderDockWindow("Inspector", dock_id_right);
-                        ImGui::DockBuilderDockWindow("Settings", dock_id_right_down);
-                        ImGui::DockBuilderDockWindow("Material settings", dock_id_right_down);
-                        ImGui::DockBuilderDockWindow("Light settings", dock_id_right_down);
+                        ImGui::DockBuilderDockWindow("Inspector",
+                                                     dock_id_right);
+                        ImGui::DockBuilderDockWindow("Settings",
+                                                     dock_id_right_down);
+                        ImGui::DockBuilderDockWindow("Material settings",
+                                                     dock_id_right_down);
+                        ImGui::DockBuilderDockWindow("Light settings",
+                                                     dock_id_right_down);
                         ImGui::DockBuilderDockWindow("Viewport", dock_main_id);
                         ImGui::DockBuilderFinish(dockspace_id);
                     }
@@ -785,7 +807,9 @@ VkPhysicalDevice application::get_physical_device() { return g_PhysicalDevice; }
 
 VkDevice application::get_device() { return g_Device; }
 
-uint32_t application::get_graphics_queue_family_index() { return g_QueueFamily; }
+uint32_t application::get_graphics_queue_family_index() {
+    return g_QueueFamily;
+}
 
 VkQueue application::get_graphics_queue() { return g_Queue; }
 

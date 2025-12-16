@@ -1,50 +1,45 @@
-#include "lbm_solver.cuh"
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
+
+#include "lbm_solver.cuh"
 
 using namespace cuda_math;
 
 // D3Q19 Constants
 __constant__ float w[19] = {
-    1.0f/3.0f,  // 0: Center
-    1.0f/18.0f, 1.0f/18.0f, 1.0f/18.0f, 1.0f/18.0f, 1.0f/18.0f, 1.0f/18.0f, // 1-6: Axial
-    1.0f/36.0f, 1.0f/36.0f, 1.0f/36.0f, 1.0f/36.0f, // 7-10: XY plane
-    1.0f/36.0f, 1.0f/36.0f, 1.0f/36.0f, 1.0f/36.0f, // 11-14: XZ plane
-    1.0f/36.0f, 1.0f/36.0f, 1.0f/36.0f, 1.0f/36.0f  // 15-18: YZ plane
+    1.0f / 3.0f,  // 0: Center
+    1.0f / 18.0f, 1.0f / 18.0f, 1.0f / 18.0f, 1.0f / 18.0f,
+    1.0f / 18.0f, 1.0f / 18.0f,                              // 1-6: Axial
+    1.0f / 36.0f, 1.0f / 36.0f, 1.0f / 36.0f, 1.0f / 36.0f,  // 7-10: XY plane
+    1.0f / 36.0f, 1.0f / 36.0f, 1.0f / 36.0f, 1.0f / 36.0f,  // 11-14: XZ plane
+    1.0f / 36.0f, 1.0f / 36.0f, 1.0f / 36.0f, 1.0f / 36.0f   // 15-18: YZ plane
 };
 
-__constant__ int cx[19] = { 0, 1, -1, 0, 0, 0, 0, 1, -1, 1, -1, 1, -1, 1, -1, 0, 0, 0, 0 };
-__constant__ int cy[19] = { 0, 0, 0, 1, -1, 0, 0, 1, -1, -1, 1, 0, 0, 0, 0, 1, -1, 1, -1 };
-__constant__ int cz[19] = { 0, 0, 0, 0, 0, 1, -1, 0, 0, 0, 0, 1, -1, -1, 1, 1, -1, -1, 1 };
+__constant__ int cx[19] = {0,  1, -1, 0, 0,  0, 0, 1, -1, 1,
+                           -1, 1, -1, 1, -1, 0, 0, 0, 0};
+__constant__ int cy[19] = {0, 0, 0, 1, -1, 0, 0,  1, -1, -1,
+                           1, 0, 0, 0, 0,  1, -1, 1, -1};
+__constant__ int cz[19] = {0, 0, 0,  0,  0, 1, -1, 0,  0, 0,
+                           0, 1, -1, -1, 1, 1, -1, -1, 1};
 
 // Inverse directions for bounce-back
-__constant__ int inv_dir[19] = { 
-    0, 
-    2, 1, 
-    4, 3, 
-    6, 5, 
-    8, 7, 
-    10, 9, 
-    12, 11, 
-    14, 13, 
-    16, 15, 
-    18, 17 
+__constant__ int inv_dir[19] = {0, 2,  1,  4,  3,  6,  5,  8,  7, 10,
+                                9, 12, 11, 14, 13, 16, 15, 18, 17
 
 };
 
-__constant__ int reflect_y[19] = {
-    0, 1, 2, 4, 3, 5, 6, 9, 10, 7, 8, 11, 12, 13, 14, 16, 15, 18, 17
-};
+__constant__ int reflect_y[19] = {0, 1,  2,  4,  3,  5,  6,  9,  10, 7,
+                                  8, 11, 12, 13, 14, 16, 15, 18, 17};
 
-__constant__ int reflect_z[19] = {
-    0, 1, 2, 3, 4, 6, 5, 7, 8, 9, 10, 13, 14, 11, 12, 17, 18, 15, 16
-};
+__constant__ int reflect_z[19] = {0,  1,  2,  3,  4,  6,  5,  7,  8, 9,
+                                  10, 13, 14, 11, 12, 17, 18, 15, 16};
 
-__global__ void k_init(float* f, float* rho, vec4* u, int width, int height, int depth) {
+__global__ void k_init(float* f, float* rho, vec4* u, int width, int height,
+                       int depth) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
     int z = blockIdx.z * blockDim.z + threadIdx.z;
-    
+
     if (x >= width || y >= height || z >= depth) return;
 
     int idx = z * width * height + y * width + x;
@@ -59,14 +54,14 @@ __global__ void k_init(float* f, float* rho, vec4* u, int width, int height, int
     float u_sq = length_sq(vec3(u_x, u_y, u_z));
     for (int k = 0; k < 19; k++) {
         float cu = cx[k] * u_x + cy[k] * u_y + cz[k] * u_z;
-        float f_eq = w[k] * r * (1.0f + 3.0f * cu + 4.5f * cu * cu - 1.5f * u_sq);
+        float f_eq =
+            w[k] * r * (1.0f + 3.0f * cu + 4.5f * cu * cu - 1.5f * u_sq);
         f[k * width * height * depth + idx] = f_eq;
     }
 
     rho[idx] = r;
     u[idx] = vec4(u_x, u_y, u_z, 0.0f);
 }
-
 
 // Deprecated kernel (might delete soon)
 #if 0
@@ -247,10 +242,8 @@ __global__ void k_stream_collide(
 __global__ void k_stream_collide_cumulant(
     const float* __restrict__ f_in, float* __restrict__ f_out,
     float* __restrict__ rho_out, vec4* __restrict__ u_out,
-    const unsigned char* __restrict__ solid,
-    int width, int height, int depth, float inlet_velocity,
-    float omega_shear, float omega_bulk 
-) {
+    const unsigned char* __restrict__ solid, int width, int height, int depth,
+    float inlet_velocity, float omega_shear, float omega_bulk) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
     int z = blockIdx.z * blockDim.z + threadIdx.z;
@@ -270,7 +263,7 @@ __global__ void k_stream_collide_cumulant(
         for (int k = 0; k < 19; k++) {
             f_out[k * num_cells + idx] = f_in[k * num_cells + idx];
         }
-        return; 
+        return;
     }
 
     float rho = 0.0f;
@@ -282,7 +275,7 @@ __global__ void k_stream_collide_cumulant(
         int nx = x - cx[k];
         int ny = y - cy[k];
         int nz = z - cz[k];
-        
+
         // Periodic wrap - REMOVED for Wind Tunnel
         // ny = (ny + height) % height;
         // nz = (nz + depth) % depth;
@@ -293,7 +286,7 @@ __global__ void k_stream_collide_cumulant(
             float u_in_x = inlet_velocity;
             float u_in_y = 0.0f;
             float u_in_z = 0.0f;
-            float u_sq = u_in_x*u_in_x + u_in_y*u_in_y + u_in_z*u_in_z;
+            float u_sq = u_in_x * u_in_x + u_in_y * u_in_y + u_in_z * u_in_z;
             float cu = cx[k] * u_in_x + cy[k] * u_in_y + cz[k] * u_in_z;
             f[k] = w[k] * r * (1.0f + 3.0f * cu + 4.5f * cu * cu - 1.5f * u_sq);
         } else if (nx >= width) {
@@ -302,17 +295,17 @@ __global__ void k_stream_collide_cumulant(
             int n_idx = nz * width * height + ny * width + safe_nx;
             f[k] = f_in[k * num_cells + n_idx];
         } else if (ny < 0) {
-             // Floor (Y=0) - Should be solid, but if not, bounce-back
-             int inv_k = inv_dir[k];
-             f[k] = f_in[inv_k * num_cells + idx];
+            // Floor (Y=0) - Should be solid, but if not, bounce-back
+            int inv_k = inv_dir[k];
+            f[k] = f_in[inv_k * num_cells + idx];
         } else if (ny >= height) {
-             // Ceiling (Y=H-1) - Free Slip
-             int ref_k = reflect_y[k];
-             f[k] = f_in[ref_k * num_cells + idx];
+            // Ceiling (Y=H-1) - Free Slip
+            int ref_k = reflect_y[k];
+            f[k] = f_in[ref_k * num_cells + idx];
         } else if (nz < 0 || nz >= depth) {
-             // Side Walls (Z=0, Z=D-1) - Free Slip
-             int ref_k = reflect_z[k];
-             f[k] = f_in[ref_k * num_cells + idx];
+            // Side Walls (Z=0, Z=D-1) - Free Slip
+            int ref_k = reflect_z[k];
+            f[k] = f_in[ref_k * num_cells + idx];
         } else {
             int n_idx = nz * width * height + ny * width + nx;
             if (solid[n_idx] > 0) {
@@ -337,18 +330,18 @@ __global__ void k_stream_collide_cumulant(
         uy *= inv_rho;
         uz *= inv_rho;
     } else {
-        rho = 1.0f; // Safety
+        rho = 1.0f;  // Safety
     }
 
     rho_out[idx] = rho;
     u_out[idx] = vec4(ux, uy, uz, 0.0f);
-    
+
     // Pre-compute raw second moments
     float m_xx = 0.0f, m_yy = 0.0f, m_zz = 0.0f;
     float m_xy = 0.0f, m_yz = 0.0f, m_zx = 0.0f;
 
     // Unroll loop for efficiency or just loop
-    for(int k = 0; k < 19; k++) {
+    for (int k = 0; k < 19; k++) {
         float fk = f[k];
         m_xx += fk * cx[k] * cx[k];
         m_yy += fk * cy[k] * cy[k];
@@ -358,9 +351,9 @@ __global__ void k_stream_collide_cumulant(
         m_zx += fk * cz[k] * cx[k];
     }
 
-    float P_xx_neq = m_xx - rho * ux * ux - rho * (1.0f/3.0f);
-    float P_yy_neq = m_yy - rho * uy * uy - rho * (1.0f/3.0f);
-    float P_zz_neq = m_zz - rho * uz * uz - rho * (1.0f/3.0f);
+    float P_xx_neq = m_xx - rho * ux * ux - rho * (1.0f / 3.0f);
+    float P_yy_neq = m_yy - rho * uy * uy - rho * (1.0f / 3.0f);
+    float P_zz_neq = m_zz - rho * uz * uz - rho * (1.0f / 3.0f);
     float P_xy_neq = m_xy - rho * ux * uy;
     float P_yz_neq = m_yz - rho * uy * uz;
     float P_zx_neq = m_zx - rho * uz * ux;
@@ -374,18 +367,18 @@ __global__ void k_stream_collide_cumulant(
     // P_ab_new = D_ab_relaxed + 1/3 * trace_relaxed * delta_ab
     //          = D_ab * (1 - w_s) + 1/3 * trace * (1 - w_b) * delta_ab
     //          = (P_ab - 1/3 * trace * delta_ab) * (1 - w_s) + ...
-    
+
     // Optimized:
     // P_xx_new = (P_xx_neq - trace/3) * (1 - w_s) + (trace/3) * (1 - w_b)
     //          = P_xx_neq * (1 - w_s) + trace/3 * (w_s - w_b)
-    
-    float third_trace = trace * (1.0f/3.0f);
+
+    float third_trace = trace * (1.0f / 3.0f);
     float correction = third_trace * (omega_shear - omega_bulk);
 
     float P_xx_new = P_xx_neq * (1.0f - omega_shear) + correction;
     float P_yy_new = P_yy_neq * (1.0f - omega_shear) + correction;
     float P_zz_new = P_zz_neq * (1.0f - omega_shear) + correction;
-    
+
     float P_xy_new = P_xy_neq * (1.0f - omega_shear);
     float P_yz_new = P_yz_neq * (1.0f - omega_shear);
     float P_zx_new = P_zx_neq * (1.0f - omega_shear);
@@ -394,34 +387,36 @@ __global__ void k_stream_collide_cumulant(
     // f = f_eq + f_neq
     // f_neq = w_k * 4.5 * (Q_ab : P_ab_new)
     // where Q_ab = c_a c_b - 1/3 delta_ab
-    
-    float u_sq = ux*ux + uy*uy + uz*uz;
+
+    float u_sq = ux * ux + uy * uy + uz * uz;
 
     for (int k = 0; k < 19; k++) {
         // Equilibrium
         float cu = cx[k] * ux + cy[k] * uy + cz[k] * uz;
-        float f_eq = w[k] * rho * (1.0f + 3.0f * cu + 4.5f * cu * cu - 1.5f * u_sq);
+        float f_eq =
+            w[k] * rho * (1.0f + 3.0f * cu + 4.5f * cu * cu - 1.5f * u_sq);
 
         // Non-Equilibrium
-        float Q_xx = (float)(cx[k] * cx[k]) - 1.0f/3.0f;
-        float Q_yy = (float)(cy[k] * cy[k]) - 1.0f/3.0f;
-        float Q_zz = (float)(cz[k] * cz[k]) - 1.0f/3.0f;
+        float Q_xx = (float)(cx[k] * cx[k]) - 1.0f / 3.0f;
+        float Q_yy = (float)(cy[k] * cy[k]) - 1.0f / 3.0f;
+        float Q_zz = (float)(cz[k] * cz[k]) - 1.0f / 3.0f;
         float Q_xy = (float)(cx[k] * cy[k]);
         float Q_yz = (float)(cy[k] * cz[k]);
         float Q_zx = (float)(cz[k] * cx[k]);
 
-        float f_neq = 4.5f * w[k] * (
-            Q_xx * P_xx_new + Q_yy * P_yy_new + Q_zz * P_zz_new +
-            2.0f * (Q_xy * P_xy_new + Q_yz * P_yz_new + Q_zx * P_zx_new)
-        );
+        float f_neq =
+            4.5f * w[k] *
+            (Q_xx * P_xx_new + Q_yy * P_yy_new + Q_zz * P_zz_new +
+             2.0f * (Q_xy * P_xy_new + Q_yz * P_yz_new + Q_zx * P_zx_new));
 
         f_out[k * num_cells + idx] = f_eq + f_neq;
     }
 }
 
-lbm_solver::lbm_solver(int width, int height, int depth) : m_width(width), m_height(height), m_depth(depth) {
+lbm_solver::lbm_solver(int width, int height, int depth)
+    : m_width(width), m_height(height), m_depth(depth) {
     m_num_cells = width * height * depth;
-    
+
     d_f = cuda_buffer<float>(19 * m_num_cells);
     d_f_new = cuda_buffer<float>(19 * m_num_cells);
     d_rho = cuda_buffer<float>(m_num_cells);
@@ -435,14 +430,14 @@ lbm_solver::lbm_solver(int width, int height, int depth) : m_width(width), m_hei
     int min_grid_size, optimal_block_size;
 #ifdef _DEBUG
     CUDA_CHECK(cudaGetDeviceProperties(&prop, 0));
-    CUDA_CHECK(cudaOccupancyMaxPotentialBlockSize(&min_grid_size,
-                &optimal_block_size, k_stream_collide_cumulant, 0, 0));
+    CUDA_CHECK(cudaOccupancyMaxPotentialBlockSize(
+        &min_grid_size, &optimal_block_size, k_stream_collide_cumulant, 0, 0));
 
     LOG_INFO("Optimal block size: {}", optimal_block_size);
 #else
     cudaGetDeviceProperties(&prop, 0);
-    cudaOccupancyMaxPotentialBlockSize(&min_grid_size,
-            &optimal_block_size, k_stream_collide_cumulant, 0, 0);
+    cudaOccupancyMaxPotentialBlockSize(&min_grid_size, &optimal_block_size,
+                                       k_stream_collide_cumulant, 0, 0);
 #endif
     int bx = 32;
     int remaining = optimal_block_size / bx;
@@ -450,18 +445,19 @@ lbm_solver::lbm_solver(int width, int height, int depth) : m_width(width), m_hei
     int bz = remaining / by;
 
     m_block_size = dim3(bx, by, bz);
-    m_grid_size = dim3(
-        (m_width + m_block_size.x - 1) / m_block_size.x, 
-        (m_height + m_block_size.y - 1) / m_block_size.y,
-        (m_depth + m_block_size.z - 1) / m_block_size.z
-    );
+    m_grid_size = dim3((m_width + m_block_size.x - 1) / m_block_size.x,
+                       (m_height + m_block_size.y - 1) / m_block_size.y,
+                       (m_depth + m_block_size.z - 1) / m_block_size.z);
 
 #ifdef _DEBUG
-    if (m_block_size.x * m_block_size.y > static_cast<unsigned int>(optimal_block_size))
+    if (m_block_size.x * m_block_size.y >
+        static_cast<unsigned int>(optimal_block_size))
         LOG_ERROR("Block size exceeds optimal size; ajust accordingly.");
 
-    LOG_INFO("Block size: ({}, {}, {})", m_block_size.x, m_block_size.y, m_block_size.z);
-    LOG_INFO("Grid size: ({}, {}, {})", m_grid_size.x, m_grid_size.y, m_grid_size.z);
+    LOG_INFO("Block size: ({}, {}, {})", m_block_size.x, m_block_size.y,
+             m_block_size.z);
+    LOG_INFO("Grid size: ({}, {}, {})", m_grid_size.x, m_grid_size.y,
+             m_grid_size.z);
     LOG_INFO("Threads per block: {}", m_block_size.x * m_block_size.y);
 #endif
 
@@ -475,7 +471,7 @@ lbm_solver::~lbm_solver() {
     d_u.release();
     d_curl.release();
     d_solid.release();
-    
+
     if (m_external_density) cudaDestroyExternalMemory(m_external_density);
     if (m_external_velocity) cudaDestroyExternalMemory(m_external_velocity);
     if (m_external_curl) cudaDestroyExternalMemory(m_external_curl);
@@ -485,13 +481,21 @@ lbm_solver::~lbm_solver() {
 }
 
 void lbm_solver::init() {
-    k_init<<<m_grid_size, m_block_size>>>(d_f.get_data(), d_rho.get_data(), d_u.get_data(), m_width, m_height, m_depth);
+    k_init<<<m_grid_size, m_block_size>>>(d_f.get_data(), d_rho.get_data(),
+                                          d_u.get_data(), m_width, m_height,
+                                          m_depth);
 }
 
 void lbm_solver::step() {
-    //k_stream_collide<<<m_grid_size, m_block_size>>>(d_f.get_data(), d_f_new.get_data(), d_rho.get_data(), d_u.get_data(), d_solid.get_data(), m_width, m_height, m_depth, m_settings.tau, m_settings.inlet_velocity);
-    
-    k_stream_collide_cumulant<<<m_grid_size, m_block_size>>>(d_f.get_data(), d_f_new.get_data(), d_rho.get_data(), d_u.get_data(), d_solid.get_data(), m_width, m_height, m_depth, m_settings.inlet_velocity, m_settings.omega_shear, m_settings.omega_bulk);
+    // k_stream_collide<<<m_grid_size, m_block_size>>>(d_f.get_data(),
+    // d_f_new.get_data(), d_rho.get_data(), d_u.get_data(), d_solid.get_data(),
+    // m_width, m_height, m_depth, m_settings.tau, m_settings.inlet_velocity);
+
+    k_stream_collide_cumulant<<<m_grid_size, m_block_size>>>(
+        d_f.get_data(), d_f_new.get_data(), d_rho.get_data(), d_u.get_data(),
+        d_solid.get_data(), m_width, m_height, m_depth,
+        m_settings.inlet_velocity, m_settings.omega_shear,
+        m_settings.omega_bulk);
 
     compute_curl();
 
@@ -501,11 +505,11 @@ void lbm_solver::step() {
 #endif
 }
 
-void lbm_solver::reset() {
-    init();
-}
+void lbm_solver::reset() { init(); }
 
-__global__ void k_add_solid_rect(unsigned char* solid, int width, int height, int depth, int rx, int ry, int rz, int rw, int rh, int rd) {
+__global__ void k_add_solid_rect(unsigned char* solid, int width, int height,
+                                 int depth, int rx, int ry, int rz, int rw,
+                                 int rh, int rd) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
     int z = blockIdx.z * blockDim.z + threadIdx.z;
@@ -514,15 +518,16 @@ __global__ void k_add_solid_rect(unsigned char* solid, int width, int height, in
 
     int idx = z * width * height + y * width + x;
 
-    if (x >= rx && x < rx + rw && 
-        y >= ry && y < ry + rh &&
-        z >= rz && z < rz + rd) {
+    if (x >= rx && x < rx + rw && y >= ry && y < ry + rh && z >= rz &&
+        z < rz + rd) {
         solid[idx] = 255;
     }
 }
 
 void lbm_solver::add_solid(const Rect& rect) {
-    k_add_solid_rect<<<m_grid_size, m_block_size>>>(d_solid.get_data(), m_width, m_height, m_depth, rect.x, rect.y, rect.z, rect.w, rect.h, rect.d);
+    k_add_solid_rect<<<m_grid_size, m_block_size>>>(
+        d_solid.get_data(), m_width, m_height, m_depth, rect.x, rect.y, rect.z,
+        rect.w, rect.h, rect.d);
 }
 
 void lbm_solver::load_mesh(const std::string& path) {
@@ -534,8 +539,9 @@ void lbm_solver::load_mesh(const std::string& path) {
 
     m_voxelizer->rotate_y(-90.0f);
 
-    glm::vec3 mesh_size = m_voxelizer->get_max_bound() - m_voxelizer->get_min_bound();
-    
+    glm::vec3 mesh_size =
+        m_voxelizer->get_max_bound() - m_voxelizer->get_min_bound();
+
     float scale_x = (static_cast<float>(m_width) * 0.8f) / mesh_size.x;
     float scale_y = (static_cast<float>(m_height) * 0.8f) / mesh_size.y;
     float scale_z = (static_cast<float>(m_depth) * 0.8f) / mesh_size.z;
@@ -543,9 +549,11 @@ void lbm_solver::load_mesh(const std::string& path) {
 
     float scale = std::min({scale_x, scale_y, scale_z});
 
-    LOG_INFO("Auto-scaling mesh. Mesh Size: [{}, {}, {}], Grid Size: [{}, {}, {}], Scale: {}", 
-        mesh_size.x, mesh_size.y, mesh_size.z,
-        m_width, m_height, m_depth, scale);
+    LOG_INFO(
+        "Auto-scaling mesh. Mesh Size: [{}, {}, {}], Grid Size: [{}, {}, {}], "
+        "Scale: {}",
+        mesh_size.x, mesh_size.y, mesh_size.z, m_width, m_height, m_depth,
+        scale);
 
     m_voxelizer->voxelize(host_solid.data(), m_width, m_height, m_depth, scale);
 
@@ -565,7 +573,8 @@ void lbm_solver::register_external_density(int fd, size_t size) {
     externalMemoryHandleDesc.handle.fd = fd;
     externalMemoryHandleDesc.size = size;
 
-    if (cudaImportExternalMemory(&m_external_density, &externalMemoryHandleDesc) != cudaSuccess) {
+    if (cudaImportExternalMemory(&m_external_density,
+                                 &externalMemoryHandleDesc) != cudaSuccess) {
         throw std::runtime_error("Failed to import external memory to CUDA");
     }
 
@@ -575,11 +584,14 @@ void lbm_solver::register_external_density(int fd, size_t size) {
     bufferDesc.flags = 0;
 
     void* mapped_ptr = nullptr;
-    if (cudaExternalMemoryGetMappedBuffer(&mapped_ptr, m_external_density, &bufferDesc) != cudaSuccess) {
-        throw std::runtime_error("Failed to map external memory to CUDA pointer");
+    if (cudaExternalMemoryGetMappedBuffer(&mapped_ptr, m_external_density,
+                                          &bufferDesc) != cudaSuccess) {
+        throw std::runtime_error(
+            "Failed to map external memory to CUDA pointer");
     }
 
-    d_rho = cuda_buffer<float>(static_cast<float*>(mapped_ptr), m_num_cells, false);
+    d_rho =
+        cuda_buffer<float>(static_cast<float*>(mapped_ptr), m_num_cells, false);
 }
 
 void lbm_solver::register_external_velocity(int fd, size_t size) {
@@ -588,8 +600,10 @@ void lbm_solver::register_external_velocity(int fd, size_t size) {
     externalMemoryHandleDesc.handle.fd = fd;
     externalMemoryHandleDesc.size = size;
 
-    if (cudaImportExternalMemory(&m_external_velocity, &externalMemoryHandleDesc) != cudaSuccess) {
-        throw std::runtime_error("Failed to import external velocity memory to CUDA");
+    if (cudaImportExternalMemory(&m_external_velocity,
+                                 &externalMemoryHandleDesc) != cudaSuccess) {
+        throw std::runtime_error(
+            "Failed to import external velocity memory to CUDA");
     }
 
     cudaExternalMemoryBufferDesc bufferDesc = {};
@@ -598,14 +612,18 @@ void lbm_solver::register_external_velocity(int fd, size_t size) {
     bufferDesc.flags = 0;
 
     void* mapped_ptr = nullptr;
-    if (cudaExternalMemoryGetMappedBuffer(&mapped_ptr, m_external_velocity, &bufferDesc) != cudaSuccess) {
-        throw std::runtime_error("Failed to map external velocity memory to CUDA pointer");
+    if (cudaExternalMemoryGetMappedBuffer(&mapped_ptr, m_external_velocity,
+                                          &bufferDesc) != cudaSuccess) {
+        throw std::runtime_error(
+            "Failed to map external velocity memory to CUDA pointer");
     }
 
     d_u = cuda_buffer<vec4>(static_cast<vec4*>(mapped_ptr), m_num_cells, false);
 }
 
-__global__ void k_compute_curl(const vec4* __restrict__ u, float* __restrict__ curl, int width, int height, int depth) {
+__global__ void k_compute_curl(const vec4* __restrict__ u,
+                               float* __restrict__ curl, int width, int height,
+                               int depth) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
     int z = blockIdx.z * blockDim.z + threadIdx.z;
@@ -623,7 +641,7 @@ __global__ void k_compute_curl(const vec4* __restrict__ u, float* __restrict__ c
     };
 
     vec4 u_c = get_u(x, y, z);
-    
+
     // Central differences
     vec4 u_xp = get_u(x + 1, y, z);
     vec4 u_xm = get_u(x - 1, y, z);
@@ -635,10 +653,10 @@ __global__ void k_compute_curl(const vec4* __restrict__ u, float* __restrict__ c
     // Partial derivatives
     float dv_dx = (u_xp.y - u_xm.y) * 0.5f;
     float dw_dx = (u_xp.z - u_xm.z) * 0.5f;
-    
+
     float du_dy = (u_yp.x - u_ym.x) * 0.5f;
     float dw_dy = (u_yp.z - u_ym.z) * 0.5f;
-    
+
     float du_dz = (u_zp.x - u_zm.x) * 0.5f;
     float dv_dz = (u_zp.y - u_zm.y) * 0.5f;
 
@@ -650,7 +668,8 @@ __global__ void k_compute_curl(const vec4* __restrict__ u, float* __restrict__ c
 }
 
 void lbm_solver::compute_curl() {
-    k_compute_curl<<<m_grid_size, m_block_size>>>(d_u.get_data(), d_curl.get_data(), m_width, m_height, m_depth);
+    k_compute_curl<<<m_grid_size, m_block_size>>>(
+        d_u.get_data(), d_curl.get_data(), m_width, m_height, m_depth);
 }
 
 void lbm_solver::register_external_curl(int fd, size_t size) {
@@ -659,8 +678,10 @@ void lbm_solver::register_external_curl(int fd, size_t size) {
     externalMemoryHandleDesc.handle.fd = fd;
     externalMemoryHandleDesc.size = size;
 
-    if (cudaImportExternalMemory(&m_external_curl, &externalMemoryHandleDesc) != cudaSuccess) {
-        throw std::runtime_error("Failed to import external curl memory to CUDA");
+    if (cudaImportExternalMemory(&m_external_curl, &externalMemoryHandleDesc) !=
+        cudaSuccess) {
+        throw std::runtime_error(
+            "Failed to import external curl memory to CUDA");
     }
 
     cudaExternalMemoryBufferDesc bufferDesc = {};
@@ -669,11 +690,14 @@ void lbm_solver::register_external_curl(int fd, size_t size) {
     bufferDesc.flags = 0;
 
     void* mapped_ptr = nullptr;
-    if (cudaExternalMemoryGetMappedBuffer(&mapped_ptr, m_external_curl, &bufferDesc) != cudaSuccess) {
-        throw std::runtime_error("Failed to map external curl memory to CUDA pointer");
+    if (cudaExternalMemoryGetMappedBuffer(&mapped_ptr, m_external_curl,
+                                          &bufferDesc) != cudaSuccess) {
+        throw std::runtime_error(
+            "Failed to map external curl memory to CUDA pointer");
     }
 
-    d_curl = cuda_buffer<float>(static_cast<float*>(mapped_ptr), m_num_cells, false);
+    d_curl =
+        cuda_buffer<float>(static_cast<float*>(mapped_ptr), m_num_cells, false);
 }
 
 void lbm_solver::register_external_solid(int fd, size_t size) {
@@ -682,8 +706,10 @@ void lbm_solver::register_external_solid(int fd, size_t size) {
     externalMemoryHandleDesc.handle.fd = fd;
     externalMemoryHandleDesc.size = size;
 
-    if (cudaImportExternalMemory(&m_external_solid, &externalMemoryHandleDesc) != cudaSuccess) {
-        throw std::runtime_error("Failed to import external solid memory to CUDA");
+    if (cudaImportExternalMemory(&m_external_solid,
+                                 &externalMemoryHandleDesc) != cudaSuccess) {
+        throw std::runtime_error(
+            "Failed to import external solid memory to CUDA");
     }
 
     cudaExternalMemoryBufferDesc bufferDesc = {};
@@ -692,9 +718,12 @@ void lbm_solver::register_external_solid(int fd, size_t size) {
     bufferDesc.flags = 0;
 
     void* mapped_ptr = nullptr;
-    if (cudaExternalMemoryGetMappedBuffer(&mapped_ptr, m_external_solid, &bufferDesc) != cudaSuccess) {
-        throw std::runtime_error("Failed to map external solid memory to CUDA pointer");
+    if (cudaExternalMemoryGetMappedBuffer(&mapped_ptr, m_external_solid,
+                                          &bufferDesc) != cudaSuccess) {
+        throw std::runtime_error(
+            "Failed to map external solid memory to CUDA pointer");
     }
 
-    d_solid = cuda_buffer<unsigned char>(static_cast<unsigned char*>(mapped_ptr), m_num_cells, false);
+    d_solid = cuda_buffer<unsigned char>(
+        static_cast<unsigned char*>(mapped_ptr), m_num_cells, false);
 }

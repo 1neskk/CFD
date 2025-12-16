@@ -9,7 +9,7 @@
 
 namespace utils {
 static uint32_t get_vulkan_memory_type(VkMemoryPropertyFlags properties,
-                                    uint32_t typeBits) {
+                                       uint32_t typeBits) {
     VkPhysicalDeviceMemoryProperties memoryProperties;
     vkGetPhysicalDeviceMemoryProperties(application::get_physical_device(),
                                         &memoryProperties);
@@ -93,8 +93,9 @@ void image::allocate_memory(uint64_t size) {
         info.arrayLayers = 1;
         info.samples = VK_SAMPLE_COUNT_1_BIT;
         info.tiling = VK_IMAGE_TILING_OPTIMAL;
-        info.usage =
-            VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        info.usage = VK_IMAGE_USAGE_SAMPLED_BIT |
+                     VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                     VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
         info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         err = vkCreateImage(device, &info, nullptr, &m_image);
@@ -195,8 +196,8 @@ void image::set_data(const void *data) {
             alloc_info.allocationSize = req.size;
             alloc_info.memoryTypeIndex = utils::get_vulkan_memory_type(
                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, req.memoryTypeBits);
-            err =
-                vkAllocateMemory(device, &alloc_info, nullptr, &m_buffer_memory);
+            err = vkAllocateMemory(device, &alloc_info, nullptr,
+                                   &m_buffer_memory);
             check_vk_result(err);
             err = vkBindBufferMemory(device, m_buffer, m_buffer_memory, 0);
             check_vk_result(err);

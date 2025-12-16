@@ -1,13 +1,13 @@
 #pragma once
 
-#include <memory>
 #include <cstdint>
+#include <memory>
 
-#include "image.h"
-#include "vulkan_cuda_buffer.cuh"
-#include "cuda_buffer.cuh"
-#include "vk_cuda_semaphore.h"
 #include "camera.h"
+#include "cuda_buffer.cuh"
+#include "image.h"
+#include "vk_cuda_semaphore.h"
+#include "vulkan_cuda_buffer.cuh"
 
 struct VectorPushConstants {
     uint32_t gridX;
@@ -24,7 +24,7 @@ struct StreamlinePushConstants {
 };
 
 class renderer {
-public:
+   public:
     renderer(uint32_t width, uint32_t height, uint32_t depth);
     ~renderer();
 
@@ -32,13 +32,13 @@ public:
     void update_camera(float dt);
     void render();
     void compute_streamlines();
-    
+
     std::shared_ptr<image> get_output_image() const { return m_output_image; }
     void resize(uint32_t width, uint32_t height);
     int get_velocity_fd();
     int get_solid_fd();
 
-private:
+   private:
     void init_vulkan_resources();
     void create_render_pass();
     void create_pipeline();
@@ -48,7 +48,7 @@ private:
     VkShaderModule create_shader_module(const std::vector<uint32_t>& code);
     VkShaderModule create_shader_module_from_file(const std::string& filepath);
 
-private:
+   private:
     uint32_t m_width;
     uint32_t m_height;
     uint32_t m_sim_width;
@@ -89,9 +89,9 @@ private:
     VkBuffer m_streamline_vertex_buffer = VK_NULL_HANDLE;
     VkDeviceMemory m_streamline_vertex_memory = VK_NULL_HANDLE;
     uint32_t m_streamline_vertex_count = 0;
-    
+
     std::shared_ptr<image> m_output_image;
-    
+
     VkImage m_depth_image = VK_NULL_HANDLE;
     VkDeviceMemory m_depth_image_memory = VK_NULL_HANDLE;
     VkImageView m_depth_image_view = VK_NULL_HANDLE;
@@ -105,7 +105,8 @@ private:
     VkPipeline m_streamline_graphics_pipeline = VK_NULL_HANDLE;
     VkPipeline m_streamline_compute_pipeline = VK_NULL_HANDLE;
     VkPipelineLayout m_streamline_compute_layout = VK_NULL_HANDLE;
-    VkDescriptorSetLayout m_streamline_compute_descriptor_layout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout m_streamline_compute_descriptor_layout =
+        VK_NULL_HANDLE;
     VkDescriptorPool m_streamline_descriptor_pool = VK_NULL_HANDLE;
     std::vector<VkDescriptorSet> m_streamline_descriptor_sets;
     VkDescriptorPool m_descriptor_pool = VK_NULL_HANDLE;
@@ -117,7 +118,7 @@ private:
     VkCommandBuffer m_transfer_command_buffer = VK_NULL_HANDLE;
     std::vector<VkFence> m_render_fences;
     std::vector<VkSemaphore> m_render_finished_semaphores;
-    
+
     uint32_t m_current_frame = 0;
     static constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 };

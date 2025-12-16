@@ -1,6 +1,7 @@
 #include <cuda_runtime.h>
-#include <limits>
+
 #include <cstring>
+#include <limits>
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -38,7 +39,7 @@ bool camera::on_update(float dt) {
         input::input::set_cursor_mode(input::cursor_mode::normal);
         return false;
     }
-    
+
     input::input::set_cursor_mode(input::cursor_mode::locked);
     bool moved = false;
 
@@ -86,8 +87,9 @@ bool camera::on_update(float dt) {
         yaw_debug = yaw_delta;
         pitch_debug = pitch_delta;
 
-        glm::quat orientation = glm::normalize(glm::cross(glm::angleAxis(-pitch_delta, right),
-                                glm::angleAxis(-yaw_delta, glm::vec3(0.0f, 1.0f, 0.0f))));
+        glm::quat orientation = glm::normalize(glm::cross(
+            glm::angleAxis(-pitch_delta, right),
+            glm::angleAxis(-yaw_delta, glm::vec3(0.0f, 1.0f, 0.0f))));
 
         m_direction = glm::rotate(orientation, m_direction);
         m_view_dirty = true;
@@ -108,7 +110,7 @@ void camera::resize(uint32_t width, uint32_t height) {
     }
 
     if (m_width == width && m_height == height) return;
-    
+
     m_width = width;
     m_height = height;
 
@@ -118,15 +120,16 @@ void camera::resize(uint32_t width, uint32_t height) {
 
 void camera::update_projection() {
     if (m_projection_dirty) {
-        if (m_width == 0 || m_height == 0)
-            return;
-        
-        float aspect_ratio = static_cast<float>(m_width) / static_cast<float>(m_height);
+        if (m_width == 0 || m_height == 0) return;
+
+        float aspect_ratio =
+            static_cast<float>(m_width) / static_cast<float>(m_height);
         if (aspect_ratio <= std::numeric_limits<float>::epsilon()) {
             LOG_ERROR("Invalid camera aspect ratio: %f", aspect_ratio);
             return;
         }
-        m_projection = glm::perspective(glm::radians(m_fov), aspect_ratio, m_near_clip, m_far_clip);
+        m_projection = glm::perspective(glm::radians(m_fov), aspect_ratio,
+                                        m_near_clip, m_far_clip);
         m_inverse_projection = glm::inverse(m_projection);
         m_projection_dirty = false;
     }
@@ -134,7 +137,8 @@ void camera::update_projection() {
 
 void camera::update_view() {
     if (m_view_dirty) {
-        m_view = glm::lookAt(m_position, m_position + m_direction, glm::vec3(0.0f, 1.0f, 0.0f));
+        m_view = glm::lookAt(m_position, m_position + m_direction,
+                             glm::vec3(0.0f, 1.0f, 0.0f));
         m_inverse_view = glm::inverse(m_view);
         m_view_dirty = false;
     }

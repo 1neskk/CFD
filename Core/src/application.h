@@ -1,14 +1,14 @@
 #pragma once
 
-#include <functional>
-#include <memory>
-#include <string>
-#include <vector>
-
 #include <GLFW/glfw3.h>
 #include <imgui.h>
 #include <imgui_impl_vulkan.h>
 #include <vulkan/vulkan.h>
+
+#include <functional>
+#include <memory>
+#include <string>
+#include <vector>
 
 class layer {
    public:
@@ -96,7 +96,8 @@ class application {
     static void submit_resource_free(std::function<void()> &&func);
 
     void add_wait_semaphore(VkSemaphore semaphore);
-    friend void frame_render(ImGui_ImplVulkanH_Window *wd, ImDrawData *draw_data);
+    friend void frame_render(ImGui_ImplVulkanH_Window *wd,
+                             ImDrawData *draw_data);
 
    private:
     void init();

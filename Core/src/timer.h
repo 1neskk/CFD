@@ -14,7 +14,8 @@ class timer {
 
     float elapsed() const {
         return std::chrono::duration_cast<std::chrono::nanoseconds>(
-                   std::chrono::high_resolution_clock::now() - m_start_timepoint)
+                   std::chrono::high_resolution_clock::now() -
+                   m_start_timepoint)
                    .count() *
                1e-9f;
     }
