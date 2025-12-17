@@ -14,7 +14,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Test")
 endif()
 
 set(CMAKE_CUDA_STANDARD 20)
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-relaxed-constexpr -use_fast_math")
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -diag-suppress 20012 --expt-relaxed-constexpr -use_fast_math")
 set(CMAKE_CUDA_ARCHITECTURES 75)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/glm)

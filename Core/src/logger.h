@@ -3,8 +3,16 @@
 #include <chrono>
 #include <memory>
 
+#if defined(__NVCC__)
+#pragma nv_diag_suppress 20208
+#endif
+
 #include "spdlog/spdlog.h"
 #include "spdlog/fmt/ostr.h"
+
+#if defined(__NVCC__)
+#pragma nv_diag_default 20208
+#endif
 
 class logger {
    public:

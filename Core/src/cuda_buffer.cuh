@@ -97,14 +97,15 @@ class cuda_buffer {
         }
     }
 
-    __device__ __host__ T *get_data() {
+    __host__ T *get_data() {
         if (!m_data) {
             LOG_ERROR("Trying to access null device pointer!");
         }
 
         return m_data;
     }
-    __device__ __host__ [[nodiscard]] const T *get_data() const {
+
+    __host__ [[nodiscard]] const T *get_data() const {
         if (!m_data) {
             LOG_ERROR("Trying to access null device pointer!");
         }

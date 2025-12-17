@@ -78,9 +78,9 @@ bool MeshVoxelizer::load_obj(const std::string& path) {
 #ifdef _DEBUG
     LOG_INFO(
         "Loaded mesh with {} triangles. Bounds: [{}, {}, {}] to [{}, {}, {}]",
-#endif
         m_triangles.size(), m_min_bound.x, m_min_bound.y, m_min_bound.z,
         m_max_bound.x, m_max_bound.y, m_max_bound.z);
+#endif
 
     return true;
 }

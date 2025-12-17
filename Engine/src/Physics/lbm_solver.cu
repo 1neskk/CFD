@@ -359,18 +359,6 @@ __global__ void k_stream_collide_cumulant(
     float P_zx_neq = m_zx - rho * uz * ux;
 
     float trace = P_xx_neq + P_yy_neq + P_zz_neq;
-    float trace_relaxed = trace * (1.0f - omega_bulk);
-
-    // Deviatoric parts relate to shear viscosity
-    // D_ab = P_ab - 1/3 * trace * delta_ab
-    // We want to relax D_ab by omega_shear
-    // P_ab_new = D_ab_relaxed + 1/3 * trace_relaxed * delta_ab
-    //          = D_ab * (1 - w_s) + 1/3 * trace * (1 - w_b) * delta_ab
-    //          = (P_ab - 1/3 * trace * delta_ab) * (1 - w_s) + ...
-
-    // Optimized:
-    // P_xx_new = (P_xx_neq - trace/3) * (1 - w_s) + (trace/3) * (1 - w_b)
-    //          = P_xx_neq * (1 - w_s) + trace/3 * (w_s - w_b)
 
     float third_trace = trace * (1.0f / 3.0f);
     float correction = third_trace * (omega_shear - omega_bulk);
@@ -524,7 +512,7 @@ __global__ void k_add_solid_rect(unsigned char* solid, int width, int height,
     }
 }
 
-void lbm_solver::add_solid(const Rect& rect) {
+__host__ void lbm_solver::add_solid(const Rect& rect) {
     k_add_solid_rect<<<m_grid_size, m_block_size>>>(
         d_solid.get_data(), m_width, m_height, m_depth, rect.x, rect.y, rect.z,
         rect.w, rect.h, rect.d);

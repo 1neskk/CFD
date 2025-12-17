@@ -90,7 +90,7 @@ class application {
     static VkCommandBuffer submit_single_time_commands(
         VkCommandBuffer command_buffer);
 
-    static VkCommandBuffer get_command_buffer(bool begin);
+    static VkCommandBuffer get_command_buffer();
     static void flush_command_buffer(VkCommandBuffer command_buffer);
 
     static void submit_resource_free(std::function<void()> &&func);

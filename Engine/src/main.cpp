@@ -24,8 +24,8 @@ class cfd final : public layer {
             width * height * depth * sizeof(uint8_t));
 
         m_solver->init();
-        m_solver->load_mesh("assets/mcl35m_2.obj");
-        // m_solver->load_mesh("assets/cube.obj");
+        //m_solver->load_mesh("assets/mcl35m_2.obj");
+        m_solver->load_mesh("assets/cube.obj");
 
 #ifdef _DEBUG
         LOG_INFO("CFD Layer initialized");

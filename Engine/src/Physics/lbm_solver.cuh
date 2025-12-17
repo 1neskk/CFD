@@ -28,7 +28,7 @@ class lbm_solver {
         int x, y, z, w, h, d;
     };
 
-    __host__ __device__ void add_solid(const Rect& rect);
+    __host__ void add_solid(const Rect& rect);
     void register_external_density(int fd, size_t size);
     void register_external_velocity(int fd, size_t size);
     void register_external_curl(int fd, size_t size);

@@ -5,7 +5,7 @@ find_package(Vulkan REQUIRED)
 find_package(X11 REQUIRED)
 
 set(CMAKE_CUDA_STANDARD 20)
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-relaxed-constexpr")
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -diag-suppress 20012 --expt-relaxed-constexpr")
 set(CMAKE_CUDA_ARCHITECTURES 75)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/glm)

@@ -395,9 +395,6 @@ void frame_render(ImGui_ImplVulkanH_Window *wd, ImDrawData *draw_data) {
 
     vkCmdEndRenderPass(fd->CommandBuffer);
     {
-        VkPipelineStageFlags wait_stage =
-            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-
         std::vector<VkSemaphore> wait_semaphores;
         wait_semaphores.push_back(image_acquired_semaphore);
 
@@ -813,7 +810,7 @@ uint32_t application::get_graphics_queue_family_index() {
 
 VkQueue application::get_graphics_queue() { return g_Queue; }
 
-VkCommandBuffer application::get_command_buffer(bool begin) {
+VkCommandBuffer application::get_command_buffer() {
     ImGui_ImplVulkanH_Window *wd = &g_MainWindowData;
 
     // Use any command queue
@@ -840,7 +837,7 @@ VkCommandBuffer application::get_command_buffer(bool begin) {
 }
 
 VkCommandBuffer application::begin_single_time_commands() {
-    VkCommandBuffer commandBuffer = get_command_buffer(true);
+    VkCommandBuffer commandBuffer = get_command_buffer();
     return commandBuffer;
 }
 

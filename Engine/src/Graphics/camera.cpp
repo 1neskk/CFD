@@ -78,14 +78,9 @@ bool camera::on_update(float dt) {
         moved = true;
     }
 
-    float yaw_debug, pitch_debug;
-
     if (mouse_delta.x != 0.0f || mouse_delta.y != 0.0f) {
         float yaw_delta = mouse_delta.x * get_rotation_speed();
         float pitch_delta = mouse_delta.y * get_rotation_speed();
-
-        yaw_debug = yaw_delta;
-        pitch_debug = pitch_delta;
 
         glm::quat orientation = glm::normalize(glm::cross(
             glm::angleAxis(-pitch_delta, right),

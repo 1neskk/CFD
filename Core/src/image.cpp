@@ -29,6 +29,8 @@ static uint32_t bytes_per_pixel(image_type format) {
             return 4;
         case image_type::rgba32f:
             return 16;
+        case image_type::none:
+            return 0;
     }
     return 0;
 }
@@ -39,6 +41,8 @@ static VkFormat get_vulkan_format(image_type format) {
             return VK_FORMAT_R8G8B8A8_UNORM;
         case image_type::rgba32f:
             return VK_FORMAT_R32G32B32A32_SFLOAT;
+        case image_type::none:
+            return static_cast<VkFormat>(0);
     }
     return static_cast<VkFormat>(0);
 }
@@ -74,7 +78,7 @@ image::image(uint32_t width, uint32_t height, image_type type, const void *data)
 
 image::~image() { release(); }
 
-void image::allocate_memory(uint64_t size) {
+void image::allocate_memory(uint64_t /*size*/) {
     VkDevice device = application::get_device();
     VkResult err;
 
@@ -222,7 +226,7 @@ void image::set_data(const void *data) {
 
     // Copy to image
     {
-        VkCommandBuffer command_buffer = application::get_command_buffer(true);
+        VkCommandBuffer command_buffer = application::get_command_buffer();
 
         VkImageMemoryBarrier copy_barrier = {};
         copy_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
